@@ -26,6 +26,18 @@ ARROW_FUNCTION_RE = re.compile(
     re.MULTILINE,
 )
 
+# Named import extraction: import { Foo, Bar } from './module'
+NAMED_IMPORT_RE = re.compile(
+    r"""import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]""",
+    re.MULTILINE,
+)
+
+# Default import: import Foo from './module'
+DEFAULT_IMPORT_RE = re.compile(
+    r"""import\s+([A-Za-z_][A-Za-z0-9_]*)\s+from\s+['"]([^'"]+)['"]""",
+    re.MULTILINE,
+)
+
 
 class JavaScriptParser:
     language = "JavaScript/TypeScript"
@@ -47,29 +59,45 @@ class JavaScriptParser:
 
         symbols = []
         dependencies = []
+        # Track imported names for call deduplication
+        imported_names: set[str] = set()
+        import_targets: list[str] = []
 
-        lines = source.splitlines()
-
-        # imports
+        # ── Imports ──────────────────────────────────────────────────────────
         for match in IMPORT_RE.finditer(source):
+            target = match.group(1)
             dependencies.append(
                 {
                     "edge_type": "import",
                     "source_ref": None,
-                    "target_ref": match.group(1),
+                    "target_ref": target,
                 }
             )
+            import_targets.append(target)
 
         for match in REQUIRE_RE.finditer(source):
+            target = match.group(1)
             dependencies.append(
                 {
                     "edge_type": "require",
                     "source_ref": None,
-                    "target_ref": match.group(1),
+                    "target_ref": target,
                 }
             )
+            import_targets.append(target)
 
-        # classes
+        # Track named imports for call resolution
+        for match in NAMED_IMPORT_RE.finditer(source):
+            names_str = match.group(1)
+            for name in re.split(r"[,\s]+", names_str):
+                name = name.strip()
+                if name and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+                    imported_names.add(name)
+
+        for match in DEFAULT_IMPORT_RE.finditer(source):
+            imported_names.add(match.group(1))
+
+        # ── Symbols ──────────────────────────────────────────────────────────
         for match in CLASS_RE.finditer(source):
             name = match.group(1)
             line_no = self._line_number_from_index(source, match.start())
@@ -83,7 +111,6 @@ class JavaScriptParser:
                 }
             )
 
-        # named functions
         for match in FUNCTION_RE.finditer(source):
             name = match.group(1)
             line_no = self._line_number_from_index(source, match.start())
@@ -97,7 +124,6 @@ class JavaScriptParser:
                 }
             )
 
-        # arrow functions
         for match in ARROW_FUNCTION_RE.finditer(source):
             name = match.group(1)
             line_no = self._line_number_from_index(source, match.start())
@@ -111,29 +137,43 @@ class JavaScriptParser:
                 }
             )
 
-        # export detection
+        # ── Exports ──────────────────────────────────────────────────────────
         EXPORT_RE = re.compile(r"export\s+(?:const|let|var|function|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
         for match in EXPORT_RE.finditer(source):
             dependencies.append({
                 "edge_type": "export",
                 "source_ref": match.group(1),
-                "target_ref": None
+                "target_ref": None,
             })
 
-        # basic call detection (e.g. someFunc())
-        CALL_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(")
-        for match in CALL_RE.finditer(source):
-            # filter out common keywords
-            if match.group(1) not in {"if", "for", "while", "switch", "catch", "require", "import"}:
-                dependencies.append({
-                    "edge_type": "call",
-                    "source_ref": None,
-                    "target_ref": match.group(1)
-                })
+        # ── Call detection — only for imported names (reduces noise dramatically) ──
+        # Instead of matching every `word(`, only track calls to names we know
+        # were imported. This keeps call edges meaningful and resolvable.
+        if imported_names:
+            # Build a pattern that only matches imported names
+            # Cap at 50 names to avoid regex explosion
+            names_to_track = list(imported_names)[:50]
+            call_pattern = re.compile(
+                r"\b(" + "|".join(re.escape(n) for n in names_to_track) + r")\s*\("
+            )
+            seen_calls: set[str] = set()
+            for match in call_pattern.finditer(source):
+                name = match.group(1)
+                if name not in seen_calls:
+                    seen_calls.add(name)
+                    dependencies.append({
+                        "edge_type": "call",
+                        "source_ref": None,
+                        "target_ref": name,
+                    })
+
+        # Deduplicate import targets for imports_list
+        unique_targets = list(dict.fromkeys(import_targets))
 
         return {
             "symbols": symbols,
             "dependencies": dependencies,
+            "imports_list": "\n".join(unique_targets[:200]),
             "error": None,
         }
 

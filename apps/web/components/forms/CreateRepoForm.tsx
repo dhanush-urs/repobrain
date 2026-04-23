@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createRepository } from "@/lib/api";
+import { Button } from "@/components/common/Button";
+import { Input } from "@/components/common/Input";
+import { Github, Plus } from "lucide-react";
 
 export function CreateRepoForm() {
   const router = useRouter();
@@ -39,37 +42,49 @@ export function CreateRepoForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <label className="mb-1 block text-sm text-slate-300">
+      <div className="space-y-2">
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           GitHub Repository URL
         </label>
-        <input
-          value={repoUrl}
-          onChange={(e) => setRepoUrl(e.target.value)}
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white outline-none"
-          placeholder="https://github.com/owner/repo"
-        />
+        <div className="relative">
+          <Github className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Input
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            placeholder="https://github.com/owner/repo"
+            className="pl-10"
+            required
+          />
+        </div>
       </div>
 
-      <div>
-        <label className="mb-1 block text-sm text-slate-300">Branch</label>
-        <input
+      <div className="space-y-2">
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          Default Branch
+        </label>
+        <Input
           value={branch}
           onChange={(e) => setBranch(e.target.value)}
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white outline-none"
           placeholder="main"
+          required
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-      >
-        {loading ? "Creating..." : "Add Repository"}
-      </button>
+      {message ? (
+        <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-3 text-xs text-rose-400">
+          {message}
+        </div>
+      ) : null}
 
-      {message ? <p className="text-sm text-slate-300">{message}</p> : null}
+      <Button
+        type="submit"
+        isLoading={loading}
+        className="w-full"
+        variant="indigo"
+      >
+        <Plus className="mr-2 h-4 w-4" />
+        Add Repository
+      </Button>
     </form>
   );
 }

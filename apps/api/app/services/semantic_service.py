@@ -137,6 +137,11 @@ class SemanticService:
 
                 file_record.parse_status = "parsed"
                 parsed_files += 1
+
+                # Populate imports_list for fast fallback inference in graph queries
+                imports_list = result.get("imports_list", "")
+                if imports_list:
+                    file_record.imports_list = imports_list[:4000]  # cap to column budget
                 
                 # FLUSH incrementally to prevent monolithic session bloat
                 self.db.flush()

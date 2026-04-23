@@ -6,6 +6,7 @@ import {
   HotspotListResponse,
   PRImpactResponse,
   SemanticSearchResponse,
+  FileDetailResponse,
 } from "./types";
 
 /**
@@ -136,14 +137,47 @@ export function normalizePRImpactResponse(data: any): PRImpactResponse {
   return {
     repository_id: data?.repository_id || "",
     changed_files: Array.isArray(data?.changed_files) ? data.changed_files : [],
+    changed_symbols: Array.isArray(data?.changed_symbols) ? data.changed_symbols : [],
     impacted_count: data?.impacted_count || 0,
     risk_level: data?.risk_level || "low",
     total_impact_score: data?.total_impact_score || 0,
     summary: data?.summary || "No summary available.",
-    impacted_files: Array.isArray(data?.impacted_files) ? data.impacted_files : [],
-    reviewer_suggestions: Array.isArray(data?.reviewer_suggestions)
-      ? data.reviewer_suggestions
+    mode: data?.mode || "fallback",
+    impacted_files: Array.isArray(data?.impacted_files)
+      ? data.impacted_files.map((f: any) => ({
+          file_id: f.file_id || "",
+          path: f.path || "",
+          language: f.language || null,
+          depth: f.depth ?? 0,
+          inbound_dependencies: f.inbound_dependencies ?? 0,
+          outbound_dependencies: f.outbound_dependencies ?? 0,
+          risk_score: f.risk_score ?? 0,
+          impact_score: f.impact_score ?? 0,
+          impact_level: f.impact_level || "low",
+          reasons: Array.isArray(f.reasons) ? f.reasons : [],
+          edge_types: Array.isArray(f.edge_types) ? f.edge_types : [],
+          is_directly_changed: !!f.is_directly_changed,
+          categories: Array.isArray(f.categories) ? f.categories : [],
+          primary_category: f.primary_category || "module",
+          symbol_hits: Array.isArray(f.symbol_hits) ? f.symbol_hits : [],
+          why_now: f.why_now || "",
+        }))
       : [],
+    reviewer_suggestions: Array.isArray(data?.reviewer_suggestions)
+      ? data.reviewer_suggestions.map((s: any) => ({
+          reviewer_hint: s.reviewer_hint || "",
+          reason: s.reason || "",
+          why_now: s.why_now || "",
+        }))
+      : [],
+    flow_paths: Array.isArray(data?.flow_paths)
+      ? data.flow_paths.map((fp: any) => ({
+          summary: fp.summary || "",
+          score: fp.score ?? 0,
+          nodes: Array.isArray(fp.nodes) ? fp.nodes : [],
+        }))
+      : [],
+    notes: Array.isArray(data?.notes) ? data.notes : [],
   };
 }
 /**

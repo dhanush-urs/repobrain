@@ -1,6 +1,7 @@
 "use client";
 
 import { AskRepoResponse } from "@/lib/types";
+import Link from "next/link";
 import { 
   Terminal, 
   ShieldAlert, 
@@ -22,6 +23,7 @@ function cn(...inputs: ClassValue[]) {
 
 type Props = {
   result: AskRepoResponse;
+  repoId: string;
 };
 
 /**
@@ -36,7 +38,7 @@ function formatContent(text: string) {
     .trim();
 }
 
-export function AskRepoPanel({ result }: Props) {
+export function AskRepoPanel({ result, repoId }: Props) {
   const mode = result.answer_mode || "general";
   const confidence = result.confidence?.toLowerCase() || "medium";
   

@@ -6,30 +6,15 @@ type Props = {
 
 function statusTone(
   status: string
-): "default" | "green" | "yellow" | "red" | "blue" {
-  const normalized = status.toLowerCase();
-
-  if (
-    ["parsed", "indexed", "embedded", "ready", "success", "completed"].includes(normalized)
-  ) {
+): "green" | "blue" | "amber" | "rose" | "slate" {
+  const s = status.toLowerCase();
+  if (s === "ready" || s === "indexed" || s === "completed" || s === "success")
     return "green";
-  }
-
-  if (
-    ["parsing", "indexing", "embedding", "processing", "queued", "running"].includes(normalized)
-  ) {
-    return "yellow";
-  }
-
-  if (normalized === "failed" || normalized === "error") {
-    return "red";
-  }
-
-  if (normalized === "connected") {
+  if (["indexing", "parsing", "embedding", "running", "processing"].includes(s))
     return "blue";
-  }
-
-  return "default";
+  if (s === "pending" || s === "queued") return "slate";
+  if (s === "failed" || s === "error") return "rose";
+  return "slate";
 }
 
 export function RepoStatusBadge({ status }: Props) {

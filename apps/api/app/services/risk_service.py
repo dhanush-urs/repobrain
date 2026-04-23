@@ -19,14 +19,26 @@ class RiskService:
         self.db = db
 
     def get_hotspots(self, repository_id: str, limit: int = 20) -> list[dict]:
-        files = list(
-            self.db.scalars(
-                select(File).where(File.repository_id == repository_id)
-            ).all()
-        )
+        # Select only the columns needed — do NOT load File.content (can be megabytes)
+        file_rows = list(self.db.execute(
+            select(
+                File.id, File.path, File.language, File.file_kind,
+                File.line_count, File.is_generated, File.is_vendor, File.is_test,
+            ).where(File.repository_id == repository_id)
+        ).all())
 
-        if not files:
+        if not file_rows:
             return []
+
+        # Build lightweight file dicts
+        files = []
+        for fid, path, lang, kind, lc, is_gen, is_vendor, is_test in file_rows:
+            files.append(type("_F", (), {
+                "id": fid, "path": path, "language": lang,
+                "file_kind": kind or "source", "line_count": lc or 0,
+                "is_generated": bool(is_gen), "is_vendor": bool(is_vendor),
+                "is_test": bool(is_test),
+            })())
 
         file_ids = [f.id for f in files]
 

@@ -4,25 +4,25 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { PageHeader } from "@/components/common/PageHeader";
 import { RepoSubnav } from "@/components/layout/RepoSubnav";
 import { getHotspots } from "@/lib/api";
+import { AlertTriangle } from "lucide-react";
 
 type Props = {
   params: Promise<{ repoId: string }>;
 };
 
-function riskTone(
-  level: string
-): "default" | "green" | "yellow" | "red" | "blue" {
-  if (level === "critical" || level === "high") return "red";
-  if (level === "medium") return "yellow";
+function riskTone(level: string): "rose" | "amber" | "green" | "slate" {
+  if (level === "critical" || level === "high") return "rose";
+  if (level === "medium") return "amber";
   if (level === "low") return "green";
-  return "default";
+  return "slate";
 }
+
+export const dynamic = "force-dynamic";
 
 export default async function RepoHotspotsPage({ params }: Props) {
   const { repoId } = await params;
 
   let data = null;
-
   try {
     data = await getHotspots(repoId);
   } catch {
@@ -30,10 +30,11 @@ export default async function RepoHotspotsPage({ params }: Props) {
   }
 
   return (
-    <div>
+    <div className="space-y-8 pb-16">
       <PageHeader
         title="Risk Hotspots"
-        subtitle="Files that deserve extra engineering attention."
+        subtitle="Critical files with high complexity or dependency count."
+        icon={<AlertTriangle className="h-5 w-5" />}
       />
 
       <RepoSubnav repoId={repoId} />
@@ -44,34 +45,36 @@ export default async function RepoHotspotsPage({ params }: Props) {
           description="Make sure the repository has been parsed before viewing hotspots."
         />
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-3">
           {data.items.map((item) => (
-            <Card key={item.file_id}>
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="text-lg font-semibold text-white">
-                    {item.path || "Unknown path"}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-400">
-                    {item.language || "unknown"} • {item.file_kind || "file"}
-                  </div>
+            <Card key={item.file_id} className="py-4 px-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-white truncate">{item.path || "Unknown path"}</div>
+                  <div className="mt-1 text-xs text-slate-500">{item.language || "unknown"} · {item.file_kind || "file"}</div>
                 </div>
-                <Badge
-                  label={`${item.risk_level || "low"} (${item.risk_score || 0})`}
-                  tone={riskTone(item.risk_level || "low")}
-                />
+                <Badge label={`${item.risk_level || "low"} · ${item.risk_score || 0}`} tone={riskTone(item.risk_level || "low")} />
               </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-4 text-sm text-slate-300">
-                <div>Complexity: {item.complexity_score || 0}</div>
-                <div>Dependency: {item.dependency_score || 0}</div>
-                <div>Inbound: {item.inbound_dependencies || 0}</div>
-                <div>Outbound: {item.outbound_dependencies || 0}</div>
+              <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 border-t border-white/5 pt-4">
+                <StatCell label="Complexity" value={item.complexity_score || 0} />
+                <StatCell label="Dependency" value={item.dependency_score || 0} />
+                <StatCell label="Inbound" value={item.inbound_dependencies || 0} />
+                <StatCell label="Outbound" value={item.outbound_dependencies || 0} />
               </div>
             </Card>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function StatCell({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</div>
+      <div className="text-sm font-semibold text-slate-200">{value}</div>
     </div>
   );
 }

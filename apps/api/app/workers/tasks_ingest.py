@@ -170,7 +170,12 @@ def index_repository(repository_id: str, job_id: str) -> dict:
         import traceback
         from app.core.config import get_settings
         settings = get_settings()
-        error_msg = f"{type(exc).__name__}: {str(exc)}"
+        # Use str(exc) directly — for ValueError (clone failures) this is already
+        # a clean user-facing message.  For other exceptions include the type.
+        if isinstance(exc, ValueError):
+            error_msg = str(exc)
+        else:
+            error_msg = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] index_repository failed: {error_msg}")
         traceback.print_exc()
 
@@ -237,7 +242,7 @@ def index_repository(repository_id: str, job_id: str) -> dict:
             if job:
                 job.status = "failed"
                 job.completed_at = utc_now()
-                job.message = f"Repository indexing failed: {error_msg}"
+                job.message = error_msg  # already clean for ValueError (clone failures)
 
         db.commit()
 

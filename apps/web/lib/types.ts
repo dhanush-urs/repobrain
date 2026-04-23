@@ -136,10 +136,12 @@ export type OnboardingDocumentResponse = {
 export type PRImpactResponse = {
   repository_id: string;
   changed_files: string[];
+  changed_symbols: string[];
   impacted_count: number;
   risk_level: string;
   total_impact_score: number;
   summary: string;
+  mode: string;
   impacted_files: Array<{
     file_id: string;
     path: string;
@@ -149,11 +151,72 @@ export type PRImpactResponse = {
     outbound_dependencies: number;
     risk_score: number;
     impact_score: number;
+    impact_level: string;
+    reasons: string[];
+    edge_types: string[];
+    is_directly_changed: boolean;
+    categories: string[];
+    primary_category: string;
+    symbol_hits: string[];
+    why_now: string;
   }>;
   reviewer_suggestions: Array<{
     reviewer_hint: string;
     reason: string;
+    why_now: string;
   }>;
+  flow_paths: Array<{
+    summary: string;
+    score: number;
+    nodes: Array<{ path: string; type: string; label: string }>;
+  }>;
+  notes: string[];
+  // New enriched sections
+  input_extraction?: {
+    changed_files: string[];
+    changed_symbols: string[];
+    added_lines: number;
+    removed_lines: number;
+    analysis_source: string;
+  };
+  blast_radius?: {
+    direct_dependents_count: number;
+    upstream_dependencies_count: number;
+    total_blast_radius_count: number;
+    impacted_modules: string[];
+  };
+  risk_assessment?: {
+    overall_risk_level: string;
+    overall_risk_score: number;
+    risk_reasons: string[];
+  };
+  affected_flows?: Array<{
+    flow_name: string;
+    confidence: number;
+    summary: string;
+    path_nodes: string[];
+    why_relevant: string;
+  }>;
+  review_priorities?: Array<{
+    file_id?: string | null;
+    path: string;
+    reason: string;
+    priority_score: number;
+    primary_category: string;
+  }>;
+  possible_regressions?: Array<{
+    description: string;
+    affected_area: string;
+    confidence: string;
+  }>;
+  evidence?: Array<{
+    signal: string;
+    file_path: string;
+    detail: string;
+  }>;
+  executive_summary?: string;
+  partial_failure?: boolean;
+  partial_failure_reasons?: string[];
 };
 
 export type RefreshJob = {
@@ -175,4 +238,156 @@ export type RefreshJobListResponse = {
   repository_id: string;
   total: number;
   items: RefreshJob[];
+};
+
+// ---------------------------------------------------------------------------
+// Graph types
+// ---------------------------------------------------------------------------
+
+export type GraphNode = {
+  id: string;
+  path: string;
+  name: string;
+  folder: string;
+  language: string | null;
+  file_kind: string;
+  line_count: number;
+  is_generated: boolean;
+  is_vendor: boolean;
+  is_test: boolean;
+  degree: number;
+  // layout — assigned client-side
+  x?: number;
+  y?: number;
+};
+
+export type GraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  edge_type: "import" | "from_import" | "call" | "require" | "export" | string;
+  count: number;
+};
+
+export type RepoGraphData = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  total_files: number;
+  total_resolved_edges: number;
+  edge_type_counts: Record<string, number>;
+  truncated: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Knowledge Graph (multi-mode)
+// ---------------------------------------------------------------------------
+
+export type KnowledgeGraphNode = {
+  id: string;
+  type: "cluster" | "file";
+  label: string;
+  path: string;
+  name?: string;
+  folder?: string;
+  cluster_id: string | null;
+  risk_score: number;
+  size: number;
+  degree: number;
+  language: string | null;
+  file_kind: string;
+  line_count?: number;
+  is_generated?: boolean;
+  is_vendor?: boolean;
+  is_test?: boolean;
+  meta: {
+    file_count: number;
+    changed: boolean;
+    impacted: boolean;
+  };
+};
+
+export type KnowledgeGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  edge_type: string;
+  weight: number;
+  count: number;
+  meta: {
+    is_inferred?: boolean;
+    resolved_count?: number;
+    inferred_count?: number;
+    all_types?: string[];
+    [key: string]: unknown;
+  };
+};
+
+export type KnowledgeGraphData = {
+  view: "clusters" | "files" | "hotspots" | "impact";
+  repo_id: string;
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  legend: Record<string, string>;
+  edge_type_counts?: Record<string, number>;
+  total_files: number;
+  total_resolved_edges: number;
+  total_inferred_edges?: number;
+  truncated: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Execution Flow Map types
+// ---------------------------------------------------------------------------
+
+export type FlowNode = {
+  id: string;
+  file_id: string | null;   // stable file identifier for deep-linking
+  label: string;
+  type: string;       // route_handler | service | repository | model | utility | middleware | worker | external_client | module
+  path: string;
+  symbol: string | null;
+  role: string;
+  language: string | null;
+  line_count: number;
+  changed: boolean;
+  impacted: boolean;
+};
+
+export type FlowEdge = {
+  source: string;
+  target: string;
+  type: string;       // calls | depends_on | impacts
+};
+
+export type FlowPath = {
+  id: string;
+  score: number;
+  explanation: string;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+};
+
+export type FlowSummary = {
+  entrypoint: string;
+  estimated_confidence: number;
+  path_count: number;
+  notes: string[];
+};
+
+export type FlowData = {
+  mode: "route" | "file" | "function" | "impact" | "primary";
+  query: string;
+  repo_id: string;
+  summary: FlowSummary;
+  paths: FlowPath[];
+  // primary mode extras
+  entrypoint_candidates?: Array<{
+    path: string;
+    name: string;
+    confidence: number;
+    role: string;
+    language: string | null;
+  }>;
+  selected_entrypoint?: string;
 };

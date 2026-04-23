@@ -74,25 +74,14 @@ export function RepoActions({ repoId, initialStatus = "unknown" }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-          Current Status
-        </div>
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <RepoStatusBadge status={currentStatus} />
-            {polling ? (
-              <span className="text-xs text-amber-300 animate-pulse">
-                Syncing from backend...
-              </span>
-            ) : null}
-          </div>
-          <div className="text-xs text-slate-500 italic">
-            Repository indexing, parsing, and embedding run automatically in the background. No manual triggers are required.
-          </div>
+      <div className="rounded-xl border border-white/5 bg-slate-950/60 p-4">
+        <div className="flex items-center gap-3">
+          <RepoStatusBadge status={currentStatus} />
+          {polling && (
+            <span className="text-xs text-amber-300 animate-pulse">Syncing…</span>
+          )}
         </div>
       </div>
-
       <ActionConsole message={message} />
     </div>
   );

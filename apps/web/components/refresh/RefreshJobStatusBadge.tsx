@@ -6,16 +6,15 @@ type Props = {
 
 function toneForStatus(
   status: string
-): "default" | "green" | "yellow" | "red" | "blue" {
+): "green" | "blue" | "amber" | "rose" | "slate" {
   const s = status.toLowerCase();
-
-  if (["completed", "success", "done"].includes(s)) return "green";
-  if (["queued", "processing", "refreshing", "running"].includes(s))
-    return "yellow";
-  if (["failed", "error"].includes(s)) return "red";
-  if (["refresh_pending"].includes(s)) return "blue";
-
-  return "default";
+  if (s === "ready" || s === "indexed" || s === "completed" || s === "success")
+    return "green";
+  if (["indexing", "parsing", "embedding", "running", "processing"].includes(s))
+    return "blue";
+  if (s === "pending" || s === "queued") return "slate";
+  if (s === "failed" || s === "error") return "rose";
+  return "slate";
 }
 
 export function RefreshJobStatusBadge({ status }: Props) {

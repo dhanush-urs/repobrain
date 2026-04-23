@@ -1,27 +1,30 @@
-import { Card } from "@/components/common/Card";
 import { PageHeader } from "@/components/common/PageHeader";
 import { RepoSubnav } from "@/components/layout/RepoSubnav";
 import { SearchForm } from "@/components/repo/SearchForm";
+import { Search } from "lucide-react";
 
 type Props = {
   params: Promise<{ repoId: string }>;
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function RepoSearchPage({ params }: Props) {
   const { repoId } = await params;
 
   return (
-    <div>
+    <div className="space-y-8 pb-16">
       <PageHeader
         title="Semantic Search"
-        subtitle="Search repository knowledge using embeddings."
+        subtitle="Search repository architecture and logic using neural embeddings."
+        icon={<Search className="h-5 w-5" />}
       />
 
       <RepoSubnav repoId={repoId} />
 
-      <Card>
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
         <SearchForm repoId={repoId} />
-      </Card>
+      </div>
     </div>
   );
 }

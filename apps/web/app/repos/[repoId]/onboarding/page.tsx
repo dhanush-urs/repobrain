@@ -9,6 +9,8 @@ type Props = {
   params: Promise<{ repoId: string }>;
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function RepoOnboardingPage({ params }: Props) {
   const { repoId } = await params;
 
@@ -26,7 +28,7 @@ export default async function RepoOnboardingPage({ params }: Props) {
   }
 
   return (
-    <div>
+    <div className="space-y-8 pb-20">
       <PageHeader
         title="Onboarding Guide"
         subtitle="AI-generated onboarding document for new engineers."
@@ -40,11 +42,11 @@ export default async function RepoOnboardingPage({ params }: Props) {
           description="Generate onboarding from the backend API or ensure the repo has been parsed and embedded."
         />
       ) : (
-        <Card>
-          <div className="mb-6 flex flex-wrap gap-2 text-xs text-slate-400">
-            <span>version: {doc.version || "1.0.0"}</span>
-            <span>mode: {doc.generation_mode || "standard"}</span>
-            {doc.llm_model ? <span>model: {doc.llm_model}</span> : null}
+        <Card className="p-8">
+          <div className="mb-6 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-white/5 pb-6">
+            <span className="rounded bg-slate-900 px-2 py-1 ring-1 ring-white/5">v{doc.version || "1.0.0"}</span>
+            <span className="rounded bg-slate-900 px-2 py-1 ring-1 ring-white/5">{doc.generation_mode || "standard"}</span>
+            {doc.llm_model ? <span className="rounded bg-slate-900 px-2 py-1 ring-1 ring-white/5">{doc.llm_model}</span> : null}
           </div>
 
           <MarkdownView content={doc.content_markdown || "No content generated."} />

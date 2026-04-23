@@ -1,147 +1,152 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/common/Card";
 import { PollingStatus } from "@/components/refresh/PollingStatus";
 import { RefreshJobStatusBadge } from "@/components/refresh/RefreshJobStatusBadge";
 import { getRefreshJob } from "@/lib/api";
 import type { RefreshJob } from "@/lib/types";
+import { Clock, GitBranch, Tag, FileCode, AlertCircle, Fingerprint, Activity } from "lucide-react";
 
 type Props = {
   initialJob: RefreshJob;
 };
 
+function ClientOnlyDate({ date }: { date: string }) {
+  const [formatted, setFormatted] = useState<string>("");
+  useEffect(() => {
+    setFormatted(
+      new Date(date).toLocaleString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        month: "short",
+        day: "numeric",
+      })
+    );
+  }, [date]);
+  return <>{formatted || "…"}</>;
+}
+
 export function RefreshJobDetail({ initialJob }: Props) {
   const [job, setJob] = useState<RefreshJob>(initialJob);
 
-  const active = useMemo(() => {
-    return ["queued", "processing", "refreshing", "running"].includes(
-      job.status.toLowerCase()
-    );
-  }, [job.status]);
+  const active = useMemo(() =>
+    ["queued", "processing", "refreshing", "running"].includes((job.status || "").toLowerCase()),
+    [job.status]
+  );
 
   useEffect(() => {
     if (!active) return;
-
-    const intervalId = setInterval(async () => {
+    const id = setInterval(async () => {
       try {
         const latest = await getRefreshJob(job.id);
-        if (latest) {
-          setJob(latest);
-        }
-      } catch {
-        // ignore polling failures
-      }
+        if (latest) setJob(latest);
+      } catch { /* ignore */ }
     }, 3000);
-
-    return () => clearInterval(intervalId);
+    return () => clearInterval(id);
   }, [job.id, active]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <PollingStatus active={active} />
+    <div className="divide-y divide-white/5">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-6 py-4 bg-white/[0.01]">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-slate-900 p-2 text-indigo-400 ring-1 ring-indigo-500/20">
+            <Activity className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-xs font-semibold text-white">Job Detail</h3>
+            <PollingStatus active={active} />
+          </div>
+        </div>
         <RefreshJobStatusBadge status={job.status} />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="md:col-span-2">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-white">Summary</h2>
-            <p className="mt-1 text-sm text-slate-300">
-              {job.summary || "No summary available."}
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-sm text-slate-300">
-            <div>
-              <span className="text-slate-400 block mb-1">Event Type</span>
-              <div className="text-white font-medium">{job.event_type}</div>
-            </div>
-
-            <div>
-              <span className="text-slate-400 block mb-1">Trigger Source</span>
-              <div className="text-white font-medium">{job.trigger_source}</div>
-            </div>
-
-            <div>
-              <span className="text-slate-400 block mb-1">Branch</span>
-              <div className="text-white font-medium">{job.branch || "-"}</div>
-            </div>
-
-            <div>
-              <span className="text-slate-400 block mb-1">Created</span>
-              <div className="text-white font-medium">
-                {new Date(job.created_at).toLocaleString()}
-              </div>
-            </div>
-
-            {job.updated_at && (
+      <div className="px-6 py-6 space-y-6">
+        {/* Summary + metadata */}
+        <div className="grid gap-6 md:grid-cols-3">
+          <div className="md:col-span-2 space-y-5">
+            {job.summary && (
               <div>
-                <span className="text-slate-400 block mb-1">Last Updated</span>
-                <div className="text-white font-medium">
-                  {new Date(job.updated_at).toLocaleString()}
-                </div>
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Summary</div>
+                <p className="text-sm text-slate-200 leading-relaxed">{job.summary}</p>
               </div>
             )}
-          </div>
-        </Card>
 
-        <Card>
-          <h2 className="mb-3 text-lg font-semibold text-white">Metadata</h2>
-          <div className="space-y-3 text-xs">
-            <div>
-              <div className="text-slate-500 mb-1 uppercase tracking-wider font-bold">
-                Job ID
-              </div>
-              <div className="font-mono text-slate-300 p-2 bg-slate-950 rounded break-all border border-slate-800">
-                {job.id}
-              </div>
-            </div>
-            <div>
-              <div className="text-slate-500 mb-1 uppercase tracking-wider font-bold">
-                Repository ID
-              </div>
-              <div className="font-mono text-slate-300 p-2 bg-slate-950 rounded break-all border border-slate-800">
-                {job.repository_id}
-              </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <MetaCell icon={<Tag size={14} />} label="Event Type" value={job.event_type} />
+              <MetaCell icon={<Fingerprint size={14} />} label="Trigger" value={job.trigger_source} />
+              <MetaCell icon={<GitBranch size={14} />} label="Branch" value={job.branch || "main"} />
+              <MetaCell icon={<Clock size={14} />} label="Timestamp" value={<ClientOnlyDate date={job.created_at} />} />
             </div>
           </div>
-        </Card>
-      </div>
 
-      {job.error_message && (
-        <Card className="border-rose-900/50 bg-rose-950/10">
-          <h2 className="mb-3 text-lg font-semibold text-rose-300">
-            Error Logs
-          </h2>
-          <pre className="rounded-lg bg-slate-950 p-4 text-xs text-rose-200 border border-rose-900/30 overflow-x-auto">
-            {job.error_message}
-          </pre>
-        </Card>
-      )}
-
-      <Card>
-        <h2 className="mb-3 text-lg font-semibold text-white">
-          Changed Files ({job.changed_files.length})
-        </h2>
-        {job.changed_files.length ? (
-          <div className="space-y-1">
-            {job.changed_files.map((file, index) => (
-              <div
-                key={`${file}-${index}`}
-                className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-300 hover:bg-slate-900 transition-colors"
-              >
-                {file}
+          {/* IDs */}
+          <div className="space-y-3">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">IDs</div>
+            <div className="rounded-xl border border-white/5 bg-slate-950/40 p-4 space-y-3">
+              <div>
+                <div className="text-[9px] text-slate-600 mb-1 uppercase font-semibold tracking-widest">Job ID</div>
+                <div className="font-mono text-[10px] text-indigo-400/70 p-2 bg-slate-900 rounded border border-white/5 break-all">{job.id}</div>
               </div>
-            ))}
+              <div>
+                <div className="text-[9px] text-slate-600 mb-1 uppercase font-semibold tracking-widest">Repository ID</div>
+                <div className="font-mono text-[10px] text-slate-500 p-2 bg-slate-900 rounded border border-white/5 break-all">{job.repository_id}</div>
+              </div>
+            </div>
           </div>
-        ) : (
-          <p className="text-sm text-slate-400 italic">
-            No specific changed files recorded for this event.
-          </p>
+        </div>
+
+        {/* Error */}
+        {job.error_message && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={13} className="text-rose-500" />
+              <span className="text-[10px] font-semibold text-rose-500 uppercase tracking-widest">Error</span>
+            </div>
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+              <pre className="font-mono text-xs text-rose-400 overflow-x-auto leading-relaxed whitespace-pre-wrap">{job.error_message}</pre>
+            </div>
+          </div>
         )}
-      </Card>
+
+        {/* Changed files */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileCode size={13} className="text-indigo-400" />
+              <span className="text-[10px] font-semibold text-white uppercase tracking-widest">Changed Files</span>
+            </div>
+            <span className="text-[10px] text-slate-500">{job.changed_files.length} files</span>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-slate-950/40 p-1">
+            {job.changed_files.length ? (
+              <div className="divide-y divide-white/[0.04]">
+                {job.changed_files.map((file, i) => (
+                  <div key={`${file}-${i}`} className="flex items-center gap-3 px-4 py-2.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.02] transition-colors rounded-lg">
+                    <div className="h-1.5 w-1.5 rounded-full bg-slate-700 shrink-0" />
+                    <span className="font-mono truncate">{file}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-sm text-slate-600 italic">No files changed in this event.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetaCell({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-slate-950/40 border border-white/5 px-4 py-3">
+      <span className="text-slate-500 shrink-0">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[9px] uppercase text-slate-500 font-semibold tracking-widest mb-0.5">{label}</p>
+        <p className="text-sm text-slate-200 font-medium truncate">{value}</p>
+      </div>
     </div>
   );
 }

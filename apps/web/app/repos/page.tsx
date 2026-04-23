@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { getRepositories } from "@/lib/api";
 import type { Repository } from "@/lib/types";
+import { Card } from "@/components/common/Card";
+import { Badge } from "@/components/common/Badge";
+import { Button } from "@/components/common/Button";
+import { Plus, ChevronRight, Github, GitBranch, Database, AlertCircle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -16,66 +20,76 @@ export default async function ReposPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-white">Repositories</h1>
-        <Link
-          href="/"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-        >
-          Add Repository
+    <div className="space-y-8 pb-16">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Repositories</h1>
+          <p className="text-sm text-slate-400 mt-1">Manage and explore your indexed codebases.</p>
+        </div>
+        <Link href="/">
+          <Button variant="indigo" size="md">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Repository
+          </Button>
         </Link>
       </div>
 
       {error && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4 text-sm text-red-400">
+        <div className="rounded-xl bg-rose-500/10 border border-rose-500/20 p-4 text-sm text-rose-400 flex items-center gap-3">
+          <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
       {(!repos || repos.length === 0) ? (
-        <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-          No repositories found yet.
-        </div>
+        <Card className="flex flex-col items-center justify-center py-20 text-center border-dashed border-white/10 bg-transparent">
+          <div className="mb-4 rounded-full bg-slate-900 p-4 text-slate-600">
+            <Database className="h-8 w-8" />
+          </div>
+          <h3 className="text-lg font-semibold text-white mb-2">No repositories yet</h3>
+          <p className="text-sm text-slate-400 max-w-xs mb-6">
+            Connect your first repository to start indexing and exploring your codebase with AI.
+          </p>
+          <Link href="/">
+            <Button variant="indigo" size="md">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Repository
+            </Button>
+          </Link>
+        </Card>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-3">
           {repos.map((repo) => (
-            <Link
-              key={repo.id}
-              href={`/repos/${repo.id}`}
-              className="group block rounded-xl border border-slate-800 bg-slate-900/50 p-5 transition-all hover:border-slate-700 hover:bg-slate-800"
-            >
-              <div className="flex items-start justify-between sm:items-center">
-                <div className="space-y-1">
-                  <div className="text-xl font-semibold text-white group-hover:text-blue-400">
-                    {repo.repo_url || "Unnamed Repository"}
+            <Link key={repo.id} href={`/repos/${repo.id}`} className="group block">
+              <Card className="group-hover:border-indigo-500/40 transition-all duration-200">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="rounded-lg bg-slate-900 p-2 text-slate-500 ring-1 ring-white/10 group-hover:text-indigo-400 group-hover:ring-indigo-500/30 transition-all shrink-0">
+                      <Github className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-base font-semibold text-white group-hover:text-indigo-300 transition-colors truncate">
+                        {repo.repo_url ? repo.repo_url.split("/").pop() : "Unnamed Repository"}
+                      </h3>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
+                        <div className="flex items-center gap-1.5">
+                          <GitBranch className="h-3 w-3" />
+                          <span>{repo.default_branch || "main"}</span>
+                        </div>
+                        <span className="text-slate-700">·</span>
+                        <span className="truncate max-w-[240px] font-mono text-[11px] hidden sm:block">
+                          {repo.repo_url}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-400">
-                    <span>
-                      Branch: <span className="text-slate-300">{repo.default_branch || "main"}</span>
-                    </span>
-                    <span className="text-slate-700">•</span>
-                    <span>
-                      Status: <span className="text-slate-300 capitalize">{repo.status || "unknown"}</span>
-                    </span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <Badge label={repo.status || "unknown"} />
+                    <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-slate-300 transition-colors" />
                   </div>
                 </div>
-                <div className="hidden text-slate-500 sm:block">
-                  <svg
-                    className="h-5 w-5 transition-transform group-hover:translate-x-1"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
-                </div>
-              </div>
+              </Card>
             </Link>
           ))}
         </div>
