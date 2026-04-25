@@ -1,0 +1,124 @@
+{
+  "name": "RepoBrain 10.0 Universal Benchmark",
+  "version": "10.0",
+  "description": "Default 10-repository cross-archetype intelligence benchmark for RepoBrain",
+  "repositories": [
+    {
+      "repo_url": "https://github.com/fastapi/full-stack-fastapi-template",
+      "expected_archetypes": ["fullstack_web", "backend_api", "web_application"],
+      "expected_not_archetypes": ["cli_tool", "java_desktop_gui", "static_site"],
+      "expected_entry_hints": ["main", "app", "server", "wsgi", "asgi"],
+      "notes": "Full-stack FastAPI template with React frontend and FastAPI backend",
+      "allow_weak_evidence": false
+    },
+    {
+      "repo_url": "https://github.com/vitejs/vite",
+      "expected_archetypes": ["frontend_build_tool", "cli_tool", "nodejs_tool"],
+      "expected_not_archetypes": ["backend_api", "java_desktop_gui", "static_site"],
+      "expected_entry_hints": ["cli", "bin", "index", "main"],
+      "notes": "Frontend build tool and development server for modern web projects",
+      "allow_weak_evidence": false
+    },
+    {
+      "repo_url": "https://github.com/dhanush-urs/airline_reservation",
+      "expected_archetypes": ["java_desktop_gui", "swing_app", "desktop_application"],
+      "expected_not_archetypes": ["backend_api", "cli_tool", "web_application"],
+      "expected_entry_hints": ["main", "gui", "app", "Main"],
+      "notes": "Java Swing desktop application for airline reservation system",
+      "allow_weak_evidence": false
+    },
+    {
+      "repo_url": "https://github.com/fastapi/typer",
+      "expected_archetypes": ["cli_tool", "python_library", "command_line"],
+      "expected_not_archetypes": ["fullstack_web", "java_desktop_gui", "static_site"],
+      "expected_entry_hints": ["cli", "main", "__main__", "typer"],
+      "notes": "Python library for building CLI applications with type hints",
+      "allow_weak_evidence": false
+    },
+    {
+      "repo_url": "https://github.com/psf/requests",
+      "expected_archetypes": ["python_library", "http_client", "library"],
+      "expected_not_archetypes": ["fullstack_web", "cli_tool", "java_desktop_gui"],
+      "expected_entry_hints": ["requests", "__init__", "api"],
+      "notes": "Python HTTP library for humans - pure library with no main entry",
+      "allow_weak_evidence": true
+    },
+    {
+      "repo_url": "https://github.com/scikit-learn/scikit-learn",
+      "expected_archetypes": ["python_library", "machine_learning", "scientific_library"],
+      "expected_not_archetypes": ["fullstack_web", "java_desktop_gui", "cli_tool"],
+      "expected_entry_hints": ["sklearn", "__init__", "setup"],
+      "notes": "Machine learning library for Python - complex scientific codebase",
+      "allow_weak_evidence": true
+    },
+    {
+      "repo_url": "https://github.com/h5bp/html5-boilerplate",
+      "expected_archetypes": ["frontend_template", "static_site", "html_template"],
+      "expected_not_archetypes": ["backend_api", "cli_tool", "java_desktop_gui"],
+      "expected_entry_hints": ["index", "main", "app"],
+      "notes": "HTML5 frontend boilerplate template - mostly static files",
+      "allow_weak_evidence": true
+    },
+    {
+      "repo_url": "https://github.com/vercel/turborepo",
+      "expected_archetypes": ["monorepo_tool", "build_tool", "cli_tool"],
+      "expected_not_archetypes": ["java_desktop_gui", "static_site", "python_library"],
+      "expected_entry_hints": ["turbo", "cli", "bin", "main"],
+      "notes": "High-performance build system for JavaScript and TypeScript monorepos",
+      "allow_weak_evidence": false
+    },
+    {
+      "repo_url": "https://github.com/docker/awesome-compose",
+      "expected_archetypes": ["docker_examples", "infrastructure", "examples_collection"],
+      "expected_not_archetypes": ["java_desktop_gui", "python_library", "cli_tool"],
+      "expected_entry_hints": ["docker-compose", "compose", "examples"],
+      "notes": "Collection of Docker Compose examples - infrastructure-focused",
+      "allow_weak_evidence": true
+    },
+    {
+      "repo_url": "https://github.com/microsoft/vscode",
+      "expected_archetypes": ["electron_app", "desktop_editor", "typescript_app"],
+      "expected_not_archetypes": ["cli_tool", "static_site", "python_library"],
+      "expected_entry_hints": ["main", "electron", "app", "bootstrap"],
+      "notes": "Visual Studio Code editor - large Electron-based desktop application",
+      "allow_weak_evidence": false
+    }
+  ],
+  "scoring_model": {
+    "ask_repo_credibility": {
+      "max_points": 3.0,
+      "description": "Quality and accuracy of Ask Repo responses about purpose and architecture"
+    },
+    "archetype_correctness": {
+      "max_points": 1.0,
+      "description": "Correct identification of repository archetype(s)"
+    },
+    "entrypoint_plausibility": {
+      "max_points": 1.0,
+      "description": "Reasonable detection of application entrypoints"
+    },
+    "graph_usefulness": {
+      "max_points": 2.0,
+      "description": "Knowledge graph utility OR honest sparse graph reporting"
+    },
+    "execution_flow_plausibility": {
+      "max_points": 2.0,
+      "description": "Reasonable execution flow mapping and primary path detection"
+    },
+    "pr_impact_usefulness": {
+      "max_points": 1.0,
+      "description": "Sensible PR impact analysis with appropriate confidence levels"
+    }
+  },
+  "penalty_system": {
+    "hallucination_penalty": 0.5,
+    "max_hallucination_penalty": 2.0,
+    "description": "Deduct 0.5 points per obvious hallucination, max 2.0 points total"
+  },
+  "performance_thresholds": {
+    "excellent": 8.0,
+    "good": 6.0,
+    "acceptable": 4.0,
+    "poor": 0.0
+  }
+}

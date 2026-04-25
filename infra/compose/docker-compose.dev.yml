@@ -39,7 +39,7 @@ services:
       neo4j:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/ready"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5

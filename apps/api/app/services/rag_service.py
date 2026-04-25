@@ -2627,14 +2627,786 @@ def _explain_from_evidence(
         return _explain_line(target_line, file_path, context_lines)
 
 
+def _compute_answer_confidence(chunks: list[dict]) -> dict:
+    """
+    Compute answer_confidence and evidence_breakdown from a list of evidence chunks.
+    Used by both the Gemini path and the fallback path to ensure consistent trust UX.
+    Never raises.
+    """
+    _EXACT_TYPES = {"exact_symbol_definition", "exact_symbol_usage", "route_file", "entrypoint", "flow_node"}
+    _INFERRED_TYPES = {"inferred", "inferred_naming", "inferred_api", "partial_symbol_match"}
+    _SYMBOL_TYPES = {"exact_symbol_definition", "exact_symbol_usage", "partial_symbol_match"}
+    _SEMANTIC_TYPES = {"semantic", "chunk", None}
+
+    exact_count = sum(1 for c in chunks if c.get("match_type") in _EXACT_TYPES)
+    inferred_count = sum(1 for c in chunks if c.get("match_type") in _INFERRED_TYPES)
+    symbol_count = sum(1 for c in chunks if c.get("match_type") in _SYMBOL_TYPES)
+    semantic_count = sum(1 for c in chunks if c.get("match_type") in _SEMANTIC_TYPES)
+    total = len(chunks)
+
+    # Confidence: high when majority is exact/symbol, medium when mixed, low when mostly semantic/inferred
+    if total == 0:
+        confidence = "low"
+    elif exact_count + symbol_count >= total * 0.5:
+        confidence = "high"
+    elif exact_count + symbol_count >= total * 0.25:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return {
+        "answer_confidence": confidence,
+        "evidence_breakdown": {
+            "exact_edges_used": exact_count,
+            "inferred_edges_used": inferred_count,
+            "symbol_hits_used": symbol_count,
+            "semantic_hits_used": max(0, semantic_count),
+            "total_chunks": total,
+        },
+    }
+
+
+def _build_structured_answer(
+    question: str,
+    intent: str,
+    answer_text: str,
+    chunks: list[dict],
+    repo_overview: str | None = None,
+    flow_context: str | None = None,
+    answer_confidence: str | None = None,
+    evidence_breakdown: dict | None = None,
+) -> dict:
+    """
+    Build a structured answer payload from the raw answer text + evidence.
+
+    Returns a dict with:
+    - summary: first clean paragraph of the answer
+    - sections: list of {key, title, kind, content, priority, collapsible, default_open}
+    - key_files: top files from evidence
+    - evidence_preview: compact evidence chunks for collapsible display
+    - answer_mode: high_level | flow | symbol | impact | code | fallback
+
+    Never raises — returns minimal structure on failure.
+    All content comes from the actual answer_text and evidence; nothing is invented.
+    """
+    import re as _re
+
+    try:
+        sections: list[dict] = []
+        key_files: list[dict] = []
+        evidence_preview: list[dict] = []
+
+        # ── Determine answer mode from intent ────────────────────────────────
+        _INTENT_TO_MODE = {
+            "repo_summary": "high_level",
+            "architecture_explanation": "high_level",
+            "flow_question": "flow",
+            "symbol_lookup": "symbol",
+            "line_impact": "impact",
+            "code_snippet_impact": "impact",
+            "dependency_impact": "impact",
+            "route_feature_impact": "impact",
+            "config_impact": "impact",
+            "line_change_impact": "impact",
+            "semantic_qa": "code",
+            "fallback": "fallback",
+            "no_context": "fallback",
+        }
+        answer_mode = _INTENT_TO_MODE.get(intent, "code")
+
+        # ── Extract summary: first non-empty paragraph ────────────────────────
+        paragraphs = [p.strip() for p in _re.split(r"\n{2,}", answer_text.strip()) if p.strip()]
+        summary = paragraphs[0] if paragraphs else answer_text[:400].strip()
+
+        # ── Build sections from answer text ───────────────────────────────────
+        # For high-level questions, try to parse structured content from the answer
+        if answer_mode == "high_level":
+            # Summary is always first
+            sections.append({
+                "key": "summary",
+                "title": "Summary",
+                "kind": "summary",
+                "content": summary,
+                "priority": 0,
+                "collapsible": False,
+                "default_open": True,
+            })
+
+            # Extract remaining paragraphs as supporting sections
+            remaining = paragraphs[1:]
+            for i, para in enumerate(remaining[:4]):
+                # Detect section type from content keywords
+                para_lower = para.lower()
+                if any(w in para_lower for w in ("stack", "framework", "built with", "uses", "python", "javascript", "typescript", "fastapi", "flask", "django", "react", "next")):
+                    kind = "stack"
+                    title = "Stack & Framework"
+                    priority = 1
+                elif any(w in para_lower for w in ("architecture", "layer", "structure", "organized", "module", "component", "service", "route", "model")):
+                    kind = "architecture"
+                    title = "Architecture"
+                    priority = 2
+                elif any(w in para_lower for w in ("capabilit", "feature", "support", "provide", "allow", "enable", "implement")):
+                    kind = "capabilities"
+                    title = "Capabilities"
+                    priority = 3
+                elif any(w in para_lower for w in ("integrat", "firebase", "database", "redis", "openai", "gemini", "external", "api")):
+                    kind = "notes"
+                    title = "Integrations"
+                    priority = 4
+                else:
+                    kind = "notes"
+                    title = "Notes"
+                    priority = 5 + i
+
+                sections.append({
+                    "key": f"{kind}_{i}",
+                    "title": title,
+                    "kind": kind,
+                    "content": para,
+                    "priority": priority,
+                    "collapsible": True,
+                    "default_open": priority <= 2,
+                })
+
+        elif answer_mode == "flow":
+            sections.append({
+                "key": "summary",
+                "title": "Flow Summary",
+                "kind": "flow",
+                "content": summary,
+                "priority": 0,
+                "collapsible": False,
+                "default_open": True,
+            })
+            if repo_overview or flow_context:
+                ctx = flow_context or repo_overview or ""
+                if ctx:
+                    sections.append({
+                        "key": "flow_context",
+                        "title": "Execution Context",
+                        "kind": "flow",
+                        "content": ctx[:600],
+                        "priority": 1,
+                        "collapsible": True,
+                        "default_open": True,
+                    })
+
+        elif answer_mode == "symbol":
+            sections.append({
+                "key": "summary",
+                "title": "Symbol Analysis",
+                "kind": "symbol",
+                "content": summary,
+                "priority": 0,
+                "collapsible": False,
+                "default_open": True,
+            })
+            if len(paragraphs) > 1:
+                sections.append({
+                    "key": "usage",
+                    "title": "Usage",
+                    "kind": "usage",
+                    "content": "\n\n".join(paragraphs[1:3]),
+                    "priority": 1,
+                    "collapsible": True,
+                    "default_open": True,
+                })
+
+        elif answer_mode == "impact":
+            sections.append({
+                "key": "summary",
+                "title": "Impact Summary",
+                "kind": "impact",
+                "content": summary,
+                "priority": 0,
+                "collapsible": False,
+                "default_open": True,
+            })
+            if len(paragraphs) > 1:
+                sections.append({
+                    "key": "details",
+                    "title": "Details",
+                    "kind": "impact",
+                    "content": "\n\n".join(paragraphs[1:3]),
+                    "priority": 1,
+                    "collapsible": True,
+                    "default_open": True,
+                })
+
+        else:
+            # code / fallback: single answer block
+            sections.append({
+                "key": "answer",
+                "title": "Analysis",
+                "kind": "summary",
+                "content": answer_text,
+                "priority": 0,
+                "collapsible": False,
+                "default_open": True,
+            })
+
+        # ── Confidence caveat section ─────────────────────────────────────────
+        if answer_confidence == "low" and evidence_breakdown:
+            total = evidence_breakdown.get("total_chunks", 0)
+            semantic = evidence_breakdown.get("semantic_hits_used", 0)
+            if total > 0 and semantic / max(total, 1) > 0.7:
+                sections.append({
+                    "key": "confidence_note",
+                    "title": "Evidence Note",
+                    "kind": "notes",
+                    "content": "This answer relies primarily on semantic similarity — no exact symbol or graph match was found. Re-index the repository for stronger evidence.",
+                    "priority": 99,
+                    "collapsible": True,
+                    "default_open": False,
+                })
+
+        # ── Key files from evidence ───────────────────────────────────────────
+        seen_paths: set[str] = set()
+        for chunk in chunks[:10]:
+            fp = chunk.get("file_path") or ""
+            if not fp or fp in seen_paths:
+                continue
+            seen_paths.add(fp)
+            mt = chunk.get("match_type") or ""
+            key_files.append({
+                "path": fp,
+                "reason": mt.replace("_", " ") if mt else "referenced",
+                "role": None,  # filled by frontend from canonical intelligence
+            })
+            if len(key_files) >= 6:
+                break
+
+        # ── Evidence preview (for collapsible section) ────────────────────────
+        for chunk in chunks[:8]:
+            snippet = (chunk.get("snippet") or chunk.get("chunk_text") or "").strip()
+            if not snippet:
+                continue
+            # Strip raw import-only blocks from evidence preview
+            lines = snippet.splitlines()
+            non_import_lines = [l for l in lines if l.strip() and not l.strip().startswith(("import ", "from ", "#", "//"))]
+            if not non_import_lines:
+                continue  # skip pure import blocks
+            evidence_preview.append({
+                "file_path": chunk.get("file_path") or "",
+                "line_start": chunk.get("start_line"),
+                "line_end": chunk.get("end_line"),
+                "label": (chunk.get("match_type") or "").replace("_", " "),
+                "snippet": "\n".join(non_import_lines[:8]),
+                "match_type": chunk.get("match_type"),
+            })
+
+        # Sort sections by priority
+        sections.sort(key=lambda s: s["priority"])
+
+        return {
+            "summary": summary,
+            "sections": sections,
+            "key_files": key_files,
+            "evidence_preview": evidence_preview,
+            "answer_mode": answer_mode,
+        }
+
+    except Exception as e:
+        logger.debug(f"_build_structured_answer failed: {e}")
+        return {
+            "summary": answer_text[:400] if answer_text else "",
+            "sections": [],
+            "key_files": [],
+            "evidence_preview": [],
+            "answer_mode": "fallback",
+        }
+
+
 class RAGService:
     def __init__(self, db: Session):
         self.db = db
         self.embedding_service = EmbeddingService(db)
         self.graph_service = GraphService(db)
 
-    def _build_flow_context(
-        self,
+    def _build_repo_understanding_context(self, repository_id: str) -> dict:
+        """
+        Build a repo-wide synthesis context for high-level understanding questions.
+
+        Analyzes ALL indexed files to infer:
+        - Primary purpose (from routes, services, schemas, integrations — NOT just README)
+        - Framework / stack
+        - Entrypoints (backend + frontend)
+        - Routes / API endpoints
+        - Service modules
+        - Models / schemas
+        - Frontend assets
+        - Config / data files
+        - External integrations
+        - Request/response flow
+
+        Returns a structured dict. Never raises — returns partial data on failure.
+        """
+        import re as _re_ctx
+
+        result: dict = {
+            "repo_purpose_guess": "",
+            "repo_archetypes": [],
+            "primary_archetype": "generic_codebase",
+            "primary_entrypoint": None,
+            "candidate_entrypoints": [],
+            "entrypoints": [],
+            "routes": [],
+            "services": [],
+            "models": [],
+            "frontend": [],
+            "config_files": [],
+            "data_files": [],
+            "integrations": [],
+            "request_flow": [],
+            "response_flow": [],
+            "key_files": [],
+            "evidence_files": [],
+            "confidence": "low",
+            "confidence_reasons": [],
+        }
+
+        try:
+            # ── Universal Analysis Engine ─────────────────────────────────────
+            from app.services.archetype_service import ArchetypeService
+            from app.services.entrypoint_service import EntrypointService
+            from app.services.file_role_service import FileRoleService
+
+            archetype_svc = ArchetypeService(self.db)
+            entrypoint_svc = EntrypointService(self.db)
+            file_role_svc = FileRoleService(self.db)
+
+            # Detect repository archetypes
+            archetype_data = archetype_svc.detect_archetypes(repository_id)
+            result["repo_archetypes"] = archetype_data.get("archetypes", [])[:3]
+            result["primary_archetype"] = archetype_data.get("primary_archetype", "generic_codebase")
+
+            # Detect entrypoints
+            entrypoint_data = entrypoint_svc.detect_entrypoints(
+                repository_id,
+                archetype=result["primary_archetype"]
+            )
+            result["primary_entrypoint"] = entrypoint_data.get("primary_entrypoint")
+            result["candidate_entrypoints"] = entrypoint_data.get("candidate_entrypoints", [])
+
+            # ── Load all files (no content — use path + metadata first) ──────
+            file_rows = list(self.db.execute(
+                select(File.id, File.path, File.language, File.file_kind,
+                       File.line_count, File.is_test, File.is_generated, File.is_vendor)
+                .where(
+                    File.repository_id == repository_id,
+                    File.is_generated.is_(False),
+                    File.is_vendor.is_(False),
+                )
+            ).all())
+
+            if not file_rows:
+                return result
+
+            # ── Classify files by role ────────────────────────────────────────
+            _EP_STEMS = {"app", "main", "server", "index", "manage", "wsgi", "asgi", "run", "start"}
+            _ROUTE_KWORDS = {"route", "routes", "router", "controller", "handler", "endpoint", "view", "api"}
+            _SVC_KWORDS = {"service", "services", "usecase", "use_case", "manager", "business"}
+            _MODEL_KWORDS = {"model", "models", "schema", "schemas", "entity", "entities", "orm", "dto"}
+            _FRONTEND_EXTS = {".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte"}
+            _CONFIG_EXTS = {".env", ".toml", ".yaml", ".yml", ".ini", ".cfg", ".conf"}
+            _DATA_EXTS = {".json", ".csv", ".txt", ".xml", ".sql"}
+            _INTEGRATION_KWORDS = {"firebase", "gemini", "openai", "anthropic", "redis", "postgres", "mongo",
+                                    "stripe", "twilio", "sendgrid", "aws", "s3", "dynamodb", "supabase"}
+
+            for fid, path, lang, kind, lc, is_test, is_gen, is_vendor in file_rows:
+                if is_test:
+                    continue
+                p = path.lower().replace("\\", "/")
+                parts = p.split("/")
+                stem = parts[-1].rsplit(".", 1)[0] if "." in parts[-1] else parts[-1]
+                ext = "." + parts[-1].rsplit(".", 1)[-1] if "." in parts[-1] else ""
+                basename = parts[-1]
+
+                # Entrypoints
+                if stem in _EP_STEMS and len(parts) <= 3:
+                    result["entrypoints"].append(path)
+                    result["key_files"].append(path)
+
+                # Routes
+                elif any(kw in p for kw in _ROUTE_KWORDS):
+                    result["routes"].append(path)
+                    result["key_files"].append(path)
+
+                # Services
+                elif any(kw in p for kw in _SVC_KWORDS):
+                    result["services"].append(path)
+                    result["key_files"].append(path)
+
+                # Models / schemas
+                elif any(kw in p for kw in _MODEL_KWORDS):
+                    result["models"].append(path)
+                    result["key_files"].append(path)
+
+                # Frontend
+                elif ext in _FRONTEND_EXTS or any(kw in p for kw in ("frontend", "static", "public", "templates")):
+                    result["frontend"].append(path)
+
+                # Config
+                elif ext in _CONFIG_EXTS or basename.startswith(".env"):
+                    result["config_files"].append(path)
+
+                # Data
+                elif ext in _DATA_EXTS and not any(kw in p for kw in ("node_modules", "dist", "build")):
+                    result["data_files"].append(path)
+
+                # Integration detection by name
+                for kw in _INTEGRATION_KWORDS:
+                    if kw in p:
+                        result["integrations"].append(f"{kw} ({path})")
+                        break
+
+            # ── Load content for key files to extract deeper signals ──────────
+            key_paths = list(dict.fromkeys(result["key_files"][:12]))  # deduplicate, cap
+            content_rows = list(self.db.execute(
+                select(File.path, File.content)
+                .where(
+                    File.repository_id == repository_id,
+                    File.path.in_(key_paths),
+                    File.content.isnot(None),
+                )
+            ).all()) if key_paths else []
+            content_map = {r[0]: r[1] or "" for r in content_rows}
+
+            # ── Extract route paths from entrypoints + route files ────────────
+            _ROUTE_DEC_RE = _re_ctx.compile(
+                r'@(?:app|router|blueprint|api)\s*\.\s*(?:get|post|put|delete|patch|options|head)\s*\(\s*["\']([^"\']+)["\']',
+                _re_ctx.IGNORECASE,
+            )
+            detected_routes: list[str] = []
+            for path in result["entrypoints"] + result["routes"]:
+                content = content_map.get(path, "")
+                if not content:
+                    # Lazy load if not already fetched
+                    try:
+                        row = self.db.execute(
+                            select(File.content).where(
+                                File.repository_id == repository_id,
+                                File.path == path,
+                            )
+                        ).scalar_one_or_none()
+                        content = row or ""
+                    except Exception:
+                        content = ""
+                for m in _ROUTE_DEC_RE.finditer(content):
+                    detected_routes.append(m.group(1))
+            result["routes"] = list(dict.fromkeys(detected_routes[:10])) or result["routes"][:5]
+
+            # ── Multi-signal purpose inference ────────────────────────────────
+            confidence_reasons: list[str] = []
+
+            # --- Signal extraction ---
+
+            # 1. Collect all path tokens for keyword matching
+            all_paths_lower = [
+                r[1].lower().replace("\\", "/") for r in file_rows if not r[6]  # skip generated
+            ]
+
+            # 2. Extract imports_list from DB for key files
+            imported_libs: list[str] = []
+            try:
+                from app.db.models import Symbol as _Symbol
+                imp_rows = list(self.db.execute(
+                    select(_Symbol.imports_list)
+                    .join(File, _Symbol.file_id == File.id)
+                    .where(
+                        File.repository_id == repository_id,
+                        _Symbol.imports_list.isnot(None),
+                    )
+                    .limit(60)
+                ).all())
+                for (imp_json,) in imp_rows:
+                    if isinstance(imp_json, list):
+                        imported_libs.extend(str(x).lower() for x in imp_json)
+                    elif isinstance(imp_json, str):
+                        try:
+                            import json as _json
+                            parsed = _json.loads(imp_json)
+                            if isinstance(parsed, list):
+                                imported_libs.extend(str(x).lower() for x in parsed)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # 3. Scan content of key files for additional signals
+            content_blob = " ".join(content_map.values()).lower()
+
+            # 4. Extract function/class names from key file content
+            _FN_RE = _re_ctx.compile(r'(?:def|function|const|class)\s+([a-zA-Z_][a-zA-Z0-9_]*)')
+            fn_names: list[str] = []
+            for content in content_map.values():
+                fn_names.extend(m.group(1).lower() for m in _FN_RE.finditer(content))
+
+            # 5. Extract schema/model class names
+            _SCHEMA_RE = _re_ctx.compile(r'class\s+([A-Z][a-zA-Z0-9_]*(?:Request|Response|Schema|Model|DTO|Payload))')
+            schema_names: list[str] = []
+            for content in content_map.values():
+                schema_names.extend(m.group(1).lower() for m in _SCHEMA_RE.finditer(content))
+
+            # 6. Extract frontend fetch/axios targets
+            _FETCH_RE = _re_ctx.compile(r'(?:fetch|axios\.(?:get|post|put|delete))\s*\(\s*["\']([^"\']+)["\']')
+            fetch_targets: list[str] = []
+            for content in content_map.values():
+                fetch_targets.extend(m.group(1).lower() for m in _FETCH_RE.finditer(content))
+
+            # 7. Extract env/config variable names
+            _ENV_RE = _re_ctx.compile(r'(?:os\.(?:getenv|environ\.get)|process\.env\.)\s*[\[.(]?\s*["\']?([A-Z_]{3,})["\']?')
+            env_vars: list[str] = []
+            for content in content_map.values():
+                env_vars.extend(m.group(1).lower() for m in _ENV_RE.finditer(content))
+
+            # --- Scoring table ---
+            # Each category: (label, signals_list_of_(weight, matched_bool_or_count))
+            # We accumulate a float score per category, then pick top 1-3.
+
+            def _any_in(haystack: str, needles) -> bool:
+                return any(n in haystack for n in needles)
+
+            def _count_in(items: list, needles) -> int:
+                return sum(1 for x in items if any(n in x for n in needles))
+
+            # Flatten all text signals into searchable blobs
+            path_blob = " ".join(all_paths_lower)
+            import_blob = " ".join(imported_libs)
+            fn_blob = " ".join(fn_names)
+            schema_blob = " ".join(schema_names)
+            fetch_blob = " ".join(fetch_targets)
+            env_blob = " ".join(env_vars)
+            route_blob = " ".join(r.lower() for r in detected_routes)
+
+            has_backend = bool(result["entrypoints"] or result["services"] or result["routes"])
+            has_frontend = bool(result["frontend"]) or _any_in(path_blob, (".tsx", ".jsx", ".vue", ".svelte"))
+            has_routes = bool(detected_routes) or _any_in(path_blob, ("route", "controller", "handler", "endpoint"))
+            has_models = bool(result["models"])
+
+            scores: dict[str, float] = {}
+            signal_evidence: dict[str, list[str]] = {}
+
+            def _score(cat: str, weight: float, matched: bool, reason: str = "") -> None:
+                if matched:
+                    scores[cat] = scores.get(cat, 0.0) + weight
+                    signal_evidence.setdefault(cat, [])
+                    if reason:
+                        signal_evidence[cat].append(reason)
+
+            # ── api_backend ──────────────────────────────────────────────────
+            _score("API / backend service", 2.0, has_routes, f"{len(detected_routes)} route(s) detected")
+            _score("API / backend service", 1.5, len(result["services"]) >= 2, f"{len(result['services'])} service module(s)")
+            _score("API / backend service", 1.0, _any_in(import_blob, ("fastapi", "flask", "django", "express", "starlette", "aiohttp", "tornado", "hapi", "koa")), "web framework import")
+            _score("API / backend service", 0.5, has_models, f"{len(result['models'])} model/schema file(s)")
+            _score("API / backend service", 0.5, _any_in(schema_blob, ("request", "response")), "request/response schemas")
+            _score("API / backend service", -1.0, not has_backend, "no backend files found")
+
+            # ── chatbot_support ──────────────────────────────────────────────
+            _score("chatbot / support", 2.5, _any_in(import_blob, ("openai", "anthropic", "gemini", "langchain", "llama", "cohere", "mistral", "groq")), "LLM SDK import")
+            _score("chatbot / support", 2.0, _any_in(route_blob + path_blob, ("/chat", "/message", "/conversation", "/ask", "/query", "/faq")), "chat/ask route or path")
+            _score("chatbot / support", 1.5, _any_in(fn_blob, ("chat", "message", "conversation", "ask", "answer", "respond")), "chat function names")
+            _score("chatbot / support", 1.0, _any_in(schema_blob, ("chat", "message", "conversation", "query", "answer")), "chat schema names")
+            _score("chatbot / support", 1.0, _any_in(content_blob, ("system_prompt", "user_message", "assistant", "completion", "embedding")), "LLM prompt/completion patterns")
+            _score("chatbot / support", 0.5, _any_in(env_blob, ("openai_api_key", "anthropic_api_key", "gemini_api_key", "llm_api_key")), "LLM API key env var")
+
+            # ── auth_user_mgmt ───────────────────────────────────────────────
+            _score("auth / user management", 2.0, _any_in(route_blob + path_blob, ("/auth", "/login", "/logout", "/register", "/token", "/signup", "/password")), "auth route or path")
+            _score("auth / user management", 1.5, _any_in(import_blob, ("jwt", "bcrypt", "passlib", "authlib", "oauth", "passport", "jsonwebtoken", "firebase_admin")), "auth library import")
+            _score("auth / user management", 1.5, _any_in(fn_blob, ("login", "logout", "register", "authenticate", "authorize", "verify_token", "hash_password")), "auth function names")
+            _score("auth / user management", 1.0, _any_in(schema_blob, ("user", "token", "login", "register", "auth")), "auth schema names")
+            _score("auth / user management", 0.5, _any_in(env_blob, ("jwt_secret", "secret_key", "auth_secret", "token_expiry")), "auth env vars")
+
+            # ── payments_ecommerce ───────────────────────────────────────────
+            _score("payments / e-commerce", 3.0, _any_in(import_blob, ("stripe", "braintree", "paypal", "square", "razorpay", "paddle")), "payment SDK import")
+            _score("payments / e-commerce", 2.0, _any_in(route_blob + path_blob, ("/order", "/cart", "/checkout", "/payment", "/product", "/invoice", "/subscription")), "e-commerce route or path")
+            _score("payments / e-commerce", 1.5, _any_in(fn_blob, ("checkout", "payment", "order", "cart", "invoice", "refund", "subscription")), "payment function names")
+            _score("payments / e-commerce", 1.0, _any_in(schema_blob, ("order", "cart", "product", "payment", "invoice")), "e-commerce schema names")
+            _score("payments / e-commerce", 0.5, _any_in(env_blob, ("stripe_key", "stripe_secret", "payment_key")), "payment env vars")
+
+            # ── data_processing ──────────────────────────────────────────────
+            _score("data processing / ETL", 2.0, _any_in(path_blob, ("pipeline", "etl", "transform", "ingest", "batch", "worker", "job", "task", "processor")), "pipeline/ETL path")
+            _score("data processing / ETL", 1.5, _any_in(import_blob, ("pandas", "polars", "dask", "pyspark", "airflow", "prefect", "celery", "luigi", "dagster")), "data processing library")
+            _score("data processing / ETL", 1.5, _any_in(fn_blob, ("transform", "ingest", "process", "extract", "load", "pipeline", "batch")), "ETL function names")
+            _score("data processing / ETL", 1.0, len(result["data_files"]) >= 3, f"{len(result['data_files'])} data file(s)")
+            _score("data processing / ETL", 0.5, _any_in(content_blob, ("dataframe", "df.", "read_csv", "to_csv", "spark.read")), "dataframe usage patterns")
+
+            # ── ml_ai_inference ──────────────────────────────────────────────
+            _score("ML / AI inference", 2.5, _any_in(import_blob, ("torch", "tensorflow", "keras", "sklearn", "scikit", "xgboost", "lightgbm", "transformers", "huggingface", "onnx")), "ML framework import")
+            _score("ML / AI inference", 2.0, _any_in(path_blob, ("model", "train", "predict", "inference", "embedding", "classifier", "detector")), "ML path keywords")
+            _score("ML / AI inference", 1.5, _any_in(fn_blob, ("predict", "train", "fit", "evaluate", "embed", "classify", "infer")), "ML function names")
+            _score("ML / AI inference", 1.0, _any_in(content_blob, ("model.predict", "model.fit", "torch.load", "tf.keras", "pipeline(")), "ML API call patterns")
+            _score("ML / AI inference", 0.5, _any_in(env_blob, ("model_path", "model_name", "checkpoint")), "model env vars")
+
+            # ── frontend_app ─────────────────────────────────────────────────
+            _score("frontend app", 2.5, len(result["frontend"]) >= 5, f"{len(result['frontend'])} frontend file(s)")
+            _score("frontend app", 2.0, _any_in(import_blob, ("react", "vue", "angular", "svelte", "next", "nuxt", "remix")), "frontend framework import")
+            _score("frontend app", 1.5, _any_in(path_blob, ("component", "page", "view", "layout", "hook", "store", "context")), "frontend path keywords")
+            _score("frontend app", 1.0, bool(fetch_targets), f"{len(fetch_targets)} fetch/axios call(s)")
+            _score("frontend app", -1.5, not has_frontend, "no frontend files found")
+
+            # ── dashboard_admin ──────────────────────────────────────────────
+            _score("dashboard / admin", 2.0, _any_in(route_blob + path_blob, ("/admin", "/dashboard", "/panel", "/manage", "/cms", "/backoffice")), "admin/dashboard route or path")
+            _score("dashboard / admin", 1.5, _any_in(import_blob, ("django.contrib.admin", "flask_admin", "react-admin", "adminjs", "forest")), "admin framework import")
+            _score("dashboard / admin", 1.0, _any_in(fn_blob, ("dashboard", "admin", "report", "analytics", "metric", "stat")), "admin function names")
+            _score("dashboard / admin", 0.5, _any_in(content_blob, ("crud", "datatable", "pagination", "filter_by", "order_by")), "CRUD/table patterns")
+
+            # ── cli_tooling ──────────────────────────────────────────────────
+            _score("CLI / tooling", 2.5, _any_in(import_blob, ("click", "typer", "argparse", "docopt", "fire", "commander", "yargs", "clap")), "CLI framework import")
+            _score("CLI / tooling", 2.0, _any_in(path_blob, ("cli", "cmd", "command", "tool", "script", "bin/")), "CLI path keywords")
+            _score("CLI / tooling", 1.5, _any_in(fn_blob, ("main", "cli", "run", "execute", "invoke", "command")), "CLI entry function names")
+            _score("CLI / tooling", 1.0, _any_in(content_blob, ('if __name__ == "__main__"', "if __name__ == '__main__'", "argv", "sys.exit")), "CLI entry patterns")
+            _score("CLI / tooling", -1.5, has_routes, "has HTTP routes (not CLI)")
+
+            # ── full_stack_web ───────────────────────────────────────────────
+            _score("full-stack web app", 2.0, has_frontend and has_backend, "both frontend and backend present")
+            _score("full-stack web app", 1.5, has_routes and len(result["frontend"]) >= 2, "routes + frontend files")
+            _score("full-stack web app", 1.0, bool(fetch_targets) and has_routes, "frontend fetches backend routes")
+            _score("full-stack web app", 0.5, _any_in(import_blob, ("next", "nuxt", "remix", "sveltekit")), "full-stack framework import")
+
+            # --- Select top categories ---
+            sorted_cats = sorted(
+                [(cat, sc) for cat, sc in scores.items() if sc > 0],
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            top_cats = sorted_cats[:3]
+
+            # Build purpose guess from archetype + multi-signal evidence
+            if result["repo_archetypes"]:
+                primary_arch = result["repo_archetypes"][0]
+                arch_name = primary_arch.get("name", "generic_codebase")
+                arch_confidence = primary_arch.get("confidence", "low")
+                arch_evidence = primary_arch.get("evidence", [])
+
+                # Map archetype to human-readable purpose
+                archetype_purposes = {
+                    "backend_api": "REST/GraphQL API service",
+                    "fullstack_web": "full-stack web application",
+                    "frontend_app": "frontend web application",
+                    "static_site": "static website",
+                    "java_desktop_gui": "Java Swing desktop application",
+                    "cli_tool": "command-line tool",
+                    "library_sdk": "reusable library/SDK",
+                    "data_pipeline": "data processing pipeline",
+                    "ml_ai_project": "machine learning project",
+                    "mobile_app": "mobile application",
+                    "infra_config_repo": "infrastructure configuration",
+                    "monorepo": "monorepo with multiple projects",
+                    "generic_codebase": "software project",
+                }
+
+                # Use archetype as primary purpose, enhanced by multi-signal analysis
+                archetype_purpose = archetype_purposes.get(arch_name, arch_name.replace("_", " "))
+                
+                # Enhance with top scoring categories from multi-signal analysis
+                if top_cats and top_cats[0][1] >= 2.0:  # Strong signal evidence
+                    signal_purpose = top_cats[0][0]
+                    if signal_purpose != archetype_purpose:
+                        result["repo_purpose_guess"] = f"{archetype_purpose} ({signal_purpose})"
+                    else:
+                        result["repo_purpose_guess"] = archetype_purpose
+                else:
+                    result["repo_purpose_guess"] = archetype_purpose
+                
+                # Add archetype evidence to confidence
+                confidence_reasons.append(f"Repository type: {arch_name} ({arch_confidence} confidence)")
+                confidence_reasons.extend(arch_evidence[:2])
+
+            else:
+                # Fallback to multi-signal analysis only
+                if top_cats:
+                    dominant = [cat for cat, sc in top_cats if sc >= 1.5]
+                    if dominant:
+                        result["repo_purpose_guess"] = " + ".join(dominant[:3])
+                    else:
+                        result["repo_purpose_guess"] = top_cats[0][0]
+                elif result["services"] or result["routes"]:
+                    result["repo_purpose_guess"] = "backend API service"
+                else:
+                    result["repo_purpose_guess"] = "unknown — insufficient indexed code signals"
+                
+                confidence_reasons.append("No clear repository archetype detected")
+
+            # Add entrypoint evidence
+            if result["primary_entrypoint"]:
+                ep = result["primary_entrypoint"]
+                confidence_reasons.append(f"Primary entrypoint: {ep.get('path', 'unknown')} ({ep.get('type', 'unknown')})")
+            elif result["candidate_entrypoints"]:
+                confidence_reasons.append(f"{len(result['candidate_entrypoints'])} candidate entrypoints found")
+
+            # Build confidence reasons from signal evidence
+            all_evidence: list[str] = []
+            for cat, _ in top_cats[:2]:
+                all_evidence.extend(signal_evidence.get(cat, []))
+            all_evidence = list(dict.fromkeys(all_evidence))[:6]
+
+            # Summarize signal sources used
+            signal_sources: list[str] = []
+            if detected_routes:
+                signal_sources.append(f"{len(detected_routes)} API route(s)")
+            if result["services"]:
+                signal_sources.append(f"{len(result['services'])} service module(s)")
+            if imported_libs:
+                signal_sources.append(f"{len(set(imported_libs))} unique import(s)")
+            if schema_names:
+                signal_sources.append(f"{len(schema_names)} schema name(s)")
+            if fetch_targets:
+                signal_sources.append(f"{len(fetch_targets)} frontend fetch call(s)")
+            if env_vars:
+                signal_sources.append(f"{len(env_vars)} env var(s)")
+
+            if signal_sources:
+                confidence_reasons.append("Inferred from: " + ", ".join(signal_sources))
+            if all_evidence:
+                confidence_reasons.extend(all_evidence)
+            if not top_cats:
+                confidence_reasons.append("No service or route files detected")
+
+            # ── Build request/response flow ───────────────────────────────────
+            if result["frontend"] and result["entrypoints"]:
+                result["request_flow"] = result["frontend"][:1] + result["entrypoints"][:1] + result["services"][:2]
+                result["response_flow"] = list(reversed(result["services"][:2])) + result["entrypoints"][:1] + result["frontend"][:1]
+            elif result["entrypoints"]:
+                result["request_flow"] = result["entrypoints"][:1] + result["routes"][:1] + result["services"][:2]
+                result["response_flow"] = list(reversed(result["services"][:2])) + result["routes"][:1] + result["entrypoints"][:1]
+
+            # ── Confidence scoring ────────────────────────────────────────────
+            evidence_count = (
+                len(result["entrypoints"]) +
+                len(result["services"]) +
+                len(result["models"]) +
+                len(detected_routes)
+            )
+            if evidence_count >= 6:
+                result["confidence"] = "high"
+                confidence_reasons.append(f"Strong evidence: {evidence_count} key files analyzed")
+            elif evidence_count >= 3:
+                result["confidence"] = "medium"
+                confidence_reasons.append(f"Partial evidence: {evidence_count} key files analyzed")
+            else:
+                result["confidence"] = "low"
+                confidence_reasons.append("Limited indexed code — confidence reduced")
+
+            result["confidence_reasons"] = confidence_reasons
+            result["evidence_files"] = key_paths[:8]
+
+            # Cap lists
+            result["entrypoints"] = result["entrypoints"][:4]
+            result["services"] = result["services"][:6]
+            result["models"] = result["models"][:4]
+            result["frontend"] = result["frontend"][:4]
+            result["config_files"] = result["config_files"][:4]
+            result["data_files"] = result["data_files"][:4]
+            result["integrations"] = list(dict.fromkeys(result["integrations"]))[:6]
+            result["key_files"] = list(dict.fromkeys(result["key_files"]))[:8]
+
+        except Exception as e:
+            logger.debug(f"_build_repo_understanding_context failed: {e}")
+
+        return result
+
+    def _build_flow_context(        self,
         repository_id: str,
         question: str,
         sym_info: dict,
@@ -2769,6 +3541,154 @@ class RAGService:
 
         except Exception as e:
             logger.debug("_build_flow_context failed: %s", e)
+
+        return results
+
+    def _retrieve_symbol_first(
+        self,
+        repository_id: str,
+        sym_info: dict,
+        question: str,
+        top_k: int = 8,
+    ) -> list[dict]:
+        """
+        Symbol-first retrieval for SYMBOL_LOOKUP intent.
+
+        Strategy (in priority order):
+        1. Exact symbol table match → definition file(s)
+        2. uses_symbol edges → files that use the symbol
+        3. import/call edges referencing the symbol → usage files
+        4. Hybrid search fallback
+
+        Returns evidence chunks with match_type indicating exact vs inferred.
+        Never raises — returns [] on failure.
+        """
+        results: list[dict] = []
+        seen_ids: set[str] = set()
+
+        def _add(item: dict) -> None:
+            uid = item.get("file_id") or item.get("file_path") or ""
+            if uid and uid not in seen_ids:
+                seen_ids.add(uid)
+                results.append(item)
+
+        bare = sym_info.get("bare_identifiers", [])
+        primary = sym_info.get("likely_primary_symbol", "")
+        # Extract leaf symbol name
+        sym_name = ""
+        if primary:
+            if primary.startswith("from ") or primary.startswith("import "):
+                m = re.search(r"import\s+([\w]+)", primary, re.IGNORECASE)
+                sym_name = m.group(1) if m else ""
+            else:
+                sym_name = primary
+        if not sym_name and bare:
+            sym_name = bare[0]
+
+        if not sym_name:
+            return results
+
+        try:
+            # ── Step 1: Exact symbol table lookup ────────────────────────────
+            sym_rows = list(self.db.execute(
+                select(Symbol.name, Symbol.file_id, Symbol.symbol_type,
+                       Symbol.start_line, Symbol.end_line, Symbol.signature,
+                       File.path, File.content)
+                .join(File, File.id == Symbol.file_id)
+                .where(
+                    Symbol.repository_id == repository_id,
+                    Symbol.name.ilike(sym_name),
+                )
+                .limit(5)
+            ).all())
+
+            for sym_name_db, sym_fid, sym_type, sl, el, sig, fpath, fcontent in sym_rows:
+                # Extract a window around the symbol definition
+                snippet = ""
+                if fcontent and sl:
+                    lines = fcontent.splitlines()
+                    start = max(0, sl - 1)
+                    end = min(len(lines), (el or sl) + 3)
+                    snippet = "\n".join(lines[start:end])
+                elif sig:
+                    snippet = sig
+
+                _add({
+                    "file_id": sym_fid,
+                    "file_path": fpath,
+                    "start_line": sl,
+                    "end_line": el,
+                    "snippet": snippet or f"{sym_type} {sym_name_db}",
+                    "match_type": "exact_symbol_definition",
+                    "score": 1.0,
+                    "_symbol_name": sym_name_db,
+                    "_symbol_type": sym_type,
+                })
+
+            # ── Step 2: uses_symbol edges → files that use this symbol ────────
+            if sym_rows:
+                def_file_ids = [r[1] for r in sym_rows]
+                usage_edges = list(self.db.execute(
+                    select(
+                        DependencyEdge.source_file_id,
+                        DependencyEdge.target_ref,
+                        File.path,
+                        File.content,
+                    )
+                    .join(File, File.id == DependencyEdge.source_file_id)
+                    .where(
+                        DependencyEdge.repository_id == repository_id,
+                        DependencyEdge.edge_type.in_(["uses_symbol", "call", "from_import"]),
+                        DependencyEdge.target_ref.ilike(sym_name),
+                        DependencyEdge.target_file_id.in_(def_file_ids),
+                    )
+                    .limit(top_k)
+                ).all())
+
+                for src_fid, tref, fpath, fcontent in usage_edges:
+                    # Find the usage line in the file
+                    snippet = ""
+                    if fcontent:
+                        for i, line in enumerate(fcontent.splitlines()):
+                            if sym_name.lower() in line.lower():
+                                start = max(0, i - 1)
+                                end = min(len(fcontent.splitlines()), i + 3)
+                                snippet = "\n".join(fcontent.splitlines()[start:end])
+                                break
+                    _add({
+                        "file_id": src_fid,
+                        "file_path": fpath,
+                        "snippet": snippet or f"uses {sym_name}",
+                        "match_type": "exact_symbol_usage",
+                        "score": 0.95,
+                        "_symbol_name": sym_name,
+                    })
+
+            # ── Step 3: Partial name match if exact found nothing ─────────────
+            if not results:
+                partial_rows = list(self.db.execute(
+                    select(Symbol.name, Symbol.file_id, Symbol.symbol_type,
+                           Symbol.start_line, File.path)
+                    .join(File, File.id == Symbol.file_id)
+                    .where(
+                        Symbol.repository_id == repository_id,
+                        Symbol.name.ilike(f"%{sym_name}%"),
+                    )
+                    .limit(6)
+                ).all())
+                for sym_name_db, sym_fid, sym_type, sl, fpath in partial_rows:
+                    _add({
+                        "file_id": sym_fid,
+                        "file_path": fpath,
+                        "start_line": sl,
+                        "snippet": f"{sym_type} {sym_name_db}",
+                        "match_type": "partial_symbol_match",
+                        "score": 0.75,
+                        "_symbol_name": sym_name_db,
+                    })
+
+        except Exception as e:
+            logger.debug("_retrieve_symbol_first failed: %s", e)
 
         return results
 
@@ -3071,6 +3991,16 @@ class RAGService:
 
             sections: list[str] = []
 
+            # ── Pre-computed intelligence (highest priority) ──────────────────
+            intel_item = next(
+                (c for c in context_pack if c.get("match_type") == "repo_intelligence"),
+                None,
+            )
+            if intel_item:
+                intel_text = (intel_item.get("snippet") or "").strip()
+                if intel_text:
+                    sections.append(f"REPO INTELLIGENCE:\n{intel_text[:1500]}")
+
             # ── README: extract first meaningful paragraph ────────────────────
             readme_item = next(
                 (c for c in context_pack if c.get("match_type") == "readme"),
@@ -3090,27 +4020,60 @@ class RAGService:
                 if paragraphs:
                     sections.append(f"README DESCRIPTION:\n{paragraphs[0][:600]}")
 
-            # ── Config files: detect framework / stack ────────────────────────
-            stack_signals: list[str] = []
+            # ── Framework / stack detection from config files ─────────────────
+            # Detect framework from dependency manifests
+            _FRAMEWORK_SIGNALS: dict[str, str] = {
+                "fastapi": "FastAPI (Python)",
+                "flask": "Flask (Python)",
+                "django": "Django (Python)",
+                "starlette": "Starlette (Python)",
+                "express": "Express.js (Node)",
+                "next": "Next.js (React)",
+                "react": "React",
+                "vue": "Vue.js",
+                "angular": "@angular",
+                "spring": "Spring Boot (Java)",
+                "gin": "Gin (Go)",
+                "rails": "Ruby on Rails",
+                "sqlalchemy": "SQLAlchemy (ORM)",
+                "prisma": "Prisma (ORM)",
+                "mongoose": "Mongoose (MongoDB)",
+                "firebase": "Firebase",
+                "supabase": "Supabase",
+                "openai": "OpenAI API",
+                "anthropic": "Anthropic API",
+                "celery": "Celery (task queue)",
+                "redis": "Redis",
+                "postgres": "PostgreSQL",
+                "mongodb": "MongoDB",
+                "jwt": "JWT auth",
+                "oauth": "OAuth",
+            }
+
+            detected_frameworks: list[str] = []
+            detected_integrations: list[str] = []
+
             for item in context_pack:
-                mt = item.get("match_type", "")
                 fp = (item.get("file_path") or "").lower()
-                snippet = (item.get("snippet") or "")
+                snippet_lower = (item.get("snippet") or "").lower()
 
-                if mt == "config_manifest" or "requirements" in fp or "package.json" in fp or "pyproject" in fp:
-                    # Extract dependency names (first 20 lines of manifest)
-                    dep_lines = [
-                        l.strip() for l in snippet.splitlines()[:30]
-                        if l.strip()
-                        and not l.strip().startswith("#")
-                        and not l.strip().startswith("//")
-                        and len(l.strip()) > 2
-                    ][:15]
-                    if dep_lines:
-                        stack_signals.append(f"DEPENDENCIES ({fp}):\n" + "\n".join(dep_lines))
+                if any(x in fp for x in ("requirements", "package.json", "pyproject", "go.mod", "cargo.toml")):
+                    for signal, label in _FRAMEWORK_SIGNALS.items():
+                        if signal in snippet_lower:
+                            if signal in ("fastapi", "flask", "django", "express", "next", "react", "vue", "angular", "spring", "gin", "rails"):
+                                if label not in detected_frameworks:
+                                    detected_frameworks.append(label)
+                            else:
+                                if label not in detected_integrations:
+                                    detected_integrations.append(label)
 
-            if stack_signals:
-                sections.append("\n\n".join(stack_signals[:2]))
+            stack_parts: list[str] = []
+            if detected_frameworks:
+                stack_parts.append(f"FRAMEWORK/STACK: {', '.join(detected_frameworks[:3])}")
+            if detected_integrations:
+                stack_parts.append(f"INTEGRATIONS: {', '.join(detected_integrations[:6])}")
+            if stack_parts:
+                sections.append("\n".join(stack_parts))
 
             # ── Entrypoint: extract top-level structure ───────────────────────
             entry_item = next(
@@ -3137,9 +4100,10 @@ class RAGService:
             route_items = [c for c in context_pack if c.get("match_type") == "route_file"]
             if route_items:
                 route_lines: list[str] = []
-                for ri in route_items[:2]:
+                for ri in route_items[:3]:
                     snip = (ri.get("snippet") or "")
-                    # Extract route decorator lines
+                    fp_short = (ri.get("file_path") or "").split("/")[-1]
+                    file_routes: list[str] = []
                     for line in snip.splitlines():
                         s = line.strip()
                         if _re_ov.search(
@@ -3149,38 +4113,68 @@ class RAGService:
                             r"(app|router)\.(get|post|put|delete|patch)\s*\(",
                             s, _re_ov.IGNORECASE
                         ) or _re_ov.search(r"path\s*\(", s, _re_ov.IGNORECASE):
-                            route_lines.append(s[:120])
+                            file_routes.append(s[:120])
+                    if file_routes:
+                        route_lines.append(f"  [{fp_short}]: " + " | ".join(file_routes[:4]))
                 if route_lines:
                     sections.append(
-                        f"ROUTES / API ENDPOINTS (sample):\n"
-                        + "\n".join(route_lines[:10])
+                        f"ROUTES / API ENDPOINTS ({len(route_items)} route file(s)):\n"
+                        + "\n".join(route_lines[:8])
                     )
 
-            # ── Service files: list service names ─────────────────────────────
+            # ── Service files: list service names and key methods ─────────────
             service_items = [c for c in context_pack if c.get("match_type") == "service_file"]
             if service_items:
-                svc_names = [
-                    (c.get("file_path") or "").split("/")[-1]
-                    for c in service_items[:4]
-                ]
-                if svc_names:
-                    sections.append(f"SERVICE MODULES: {', '.join(svc_names)}")
+                svc_parts: list[str] = []
+                for svc in service_items[:4]:
+                    svc_name = (svc.get("file_path") or "").split("/")[-1]
+                    snip = (svc.get("snippet") or "")
+                    # Extract class/function names from service
+                    method_names = _re_ov.findall(
+                        r"(?:class|def|async def)\s+(\w+)", snip
+                    )[:4]
+                    if method_names:
+                        svc_parts.append(f"  {svc_name}: {', '.join(method_names)}")
+                    else:
+                        svc_parts.append(f"  {svc_name}")
+                if svc_parts:
+                    sections.append(f"SERVICE MODULES ({len(service_items)}):\n" + "\n".join(svc_parts))
 
-            # ── Pre-computed intelligence ─────────────────────────────────────
-            intel_item = next(
-                (c for c in context_pack if c.get("match_type") == "repo_intelligence"),
-                None,
-            )
-            if intel_item:
-                intel_text = (intel_item.get("snippet") or "").strip()
-                if intel_text:
-                    sections.insert(0, f"REPO INTELLIGENCE:\n{intel_text[:1500]}")
+            # ── Data model files ──────────────────────────────────────────────
+            model_items = [c for c in context_pack if c.get("match_type") == "data_model"]
+            if model_items:
+                model_names = [
+                    (c.get("file_path") or "").split("/")[-1]
+                    for c in model_items[:4]
+                ]
+                sections.append(f"DATA MODELS: {', '.join(model_names)}")
 
             if not sections:
                 return ""
 
+            # ── Inject repo-wide code analysis as top section ─────────────────
+            # This ensures purpose is inferred from code, not just README
+            try:
+                repo_ctx = self._build_repo_understanding_context(repository_id)
+                if repo_ctx.get("repo_purpose_guess") and repo_ctx["repo_purpose_guess"] != "unknown — insufficient indexed code signals":
+                    code_analysis_lines: list[str] = [f"CODE-INFERRED PURPOSE: {repo_ctx['repo_purpose_guess']}"]
+                    if repo_ctx.get("entrypoints"):
+                        code_analysis_lines.append(f"ENTRYPOINTS: {', '.join(repo_ctx['entrypoints'][:3])}")
+                    if repo_ctx.get("services"):
+                        code_analysis_lines.append(f"SERVICE MODULES: {', '.join(s.split('/')[-1] for s in repo_ctx['services'][:4])}")
+                    if repo_ctx.get("models"):
+                        code_analysis_lines.append(f"MODELS/SCHEMAS: {', '.join(m.split('/')[-1] for m in repo_ctx['models'][:3])}")
+                    if repo_ctx.get("integrations"):
+                        code_analysis_lines.append(f"INTEGRATIONS: {', '.join(repo_ctx['integrations'][:4])}")
+                    if repo_ctx.get("request_flow"):
+                        code_analysis_lines.append(f"REQUEST FLOW: {' → '.join(str(f).split('/')[-1] for f in repo_ctx['request_flow'][:4])}")
+                    code_analysis_lines.append(f"ANALYSIS CONFIDENCE: {repo_ctx.get('confidence', 'low').upper()}")
+                    sections.insert(0, "CODE ANALYSIS:\n" + "\n".join(code_analysis_lines))
+            except Exception:
+                pass  # never fail overview synthesis
+
             overview = "\n\n---\n\n".join(sections)
-            return overview[:4000]  # hard cap
+            return overview[:4500]  # slightly larger cap for richer context
 
         except Exception as _ov_err:
             logger.debug(f"_synthesize_repo_overview failed (graceful): {_ov_err}")
@@ -3272,11 +4266,53 @@ class RAGService:
         try:
             if intent in (QueryIntent.REPO_SUMMARY, QueryIntent.ARCHITECTURE_EXPLANATION):
                 _merge(self._build_repo_context_pack(repository_id) or [])
+                # Also inject repo-wide code analysis context as a synthetic chunk
+                try:
+                    repo_ctx = self._build_repo_understanding_context(repository_id)
+                    if repo_ctx.get("repo_purpose_guess") or repo_ctx.get("services"):
+                        # Build a synthetic context chunk from the repo analysis
+                        ctx_lines: list[str] = []
+                        if repo_ctx.get("repo_purpose_guess"):
+                            ctx_lines.append(f"PURPOSE: {repo_ctx['repo_purpose_guess']}")
+                        if repo_ctx.get("entrypoints"):
+                            ctx_lines.append(f"ENTRYPOINTS: {', '.join(repo_ctx['entrypoints'][:3])}")
+                        if repo_ctx.get("routes"):
+                            ctx_lines.append(f"ROUTES: {', '.join(str(r) for r in repo_ctx['routes'][:5])}")
+                        if repo_ctx.get("services"):
+                            ctx_lines.append(f"SERVICES: {', '.join(repo_ctx['services'][:4])}")
+                        if repo_ctx.get("models"):
+                            ctx_lines.append(f"MODELS/SCHEMAS: {', '.join(repo_ctx['models'][:3])}")
+                        if repo_ctx.get("frontend"):
+                            ctx_lines.append(f"FRONTEND: {', '.join(repo_ctx['frontend'][:3])}")
+                        if repo_ctx.get("integrations"):
+                            ctx_lines.append(f"INTEGRATIONS: {', '.join(repo_ctx['integrations'][:4])}")
+                        if repo_ctx.get("data_files"):
+                            ctx_lines.append(f"DATA FILES: {', '.join(repo_ctx['data_files'][:3])}")
+                        if repo_ctx.get("request_flow"):
+                            ctx_lines.append(f"REQUEST FLOW: {' → '.join(str(f).split('/')[-1] for f in repo_ctx['request_flow'][:4])}")
+                        if ctx_lines:
+                            _merge([{
+                                "file_path": "repo_code_analysis",
+                                "snippet": "\n".join(ctx_lines),
+                                "match_type": "repo_intelligence",
+                                "score": 1.05,  # highest priority
+                                "start_line": 0,
+                                "end_line": 0,
+                            }])
+                except Exception as _ctx_err:
+                    logger.debug("repo_understanding_context failed: %s", _ctx_err)
             elif intent in (QueryIntent.FLOW_QUESTION,):
                 # Flow questions: combine repo context pack (routes/services/entrypoints)
                 # with hybrid search for the specific flow topic
                 _merge(self._build_flow_context(repository_id, clean_question, sym_info) or [])
                 if not all_retrieved:
+                    _merge(self.embedding_service.hybrid_search(repository_id, clean_question, top_k=top_k) or [])
+            elif intent in (QueryIntent.SYMBOL_LOOKUP,):
+                # Symbol-first retrieval: query symbol table BEFORE embeddings
+                # This gives exact definition + usage locations when available
+                _merge(self._retrieve_symbol_first(repository_id, sym_info, clean_question, top_k) or [])
+                # Supplement with hybrid search if symbol lookup was insufficient
+                if len(all_retrieved) < 3:
                     _merge(self.embedding_service.hybrid_search(repository_id, clean_question, top_k=top_k) or [])
             else:
                 # Primary probe: snippet-based or hybrid search
@@ -3440,12 +4476,25 @@ class RAGService:
                 llm_answer = (provider.answer(system_prompt, user_prompt) or "").strip()
                 if llm_answer:
                     shaped = _shape_final_answer(llm_answer, intent)
+                    conf_data = _compute_answer_confidence(llm_chunks)
+                    structured = _build_structured_answer(
+                        question=clean_question,
+                        intent=intent,
+                        answer_text=shaped or llm_answer,
+                        chunks=llm_chunks,
+                        repo_overview=None,
+                        flow_context=None,
+                        answer_confidence=conf_data.get("answer_confidence"),
+                        evidence_breakdown=conf_data.get("evidence_breakdown"),
+                    )
                     return {
                         "answer": shaped or llm_answer,
                         "citations": self._build_citations(llm_chunks),
                         "mode": "gemini_synthesized",
                         "llm_model": provider.model_name,
                         "query": clean_question,
+                        "structured_answer": structured,
+                        **conf_data,
                     }
             except Exception as llm_err:
                 logger.error("Gemini synthesis failed: %s", llm_err, exc_info=True)
@@ -3499,12 +4548,23 @@ class RAGService:
                 )
                 fallback_mode = "fallback"
 
+        conf_data = _compute_answer_confidence(context_chunks)
+        structured = _build_structured_answer(
+            question=clean_question,
+            intent=intent,
+            answer_text=_shape_final_answer(fallback_answer, intent),
+            chunks=context_chunks,
+            answer_confidence=conf_data.get("answer_confidence"),
+            evidence_breakdown=conf_data.get("evidence_breakdown"),
+        )
         return {
             "answer": _shape_final_answer(fallback_answer, intent),
             "citations": self._build_citations(context_chunks),
             "mode": fallback_mode,
             "llm_model": None,
             "query": clean_question,
+            "structured_answer": structured,
+            **conf_data,
         }
 
 

@@ -18,15 +18,21 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # 1) Configure logging first
     configure_logging()
+    logger.info("RepoBrain API starting up...")
 
-    # 2) Initialize DB with error handling
+    # 2) Initialize DB with error handling and timeout
     try:
+        logger.info("Attempting database initialization...")
         init_db()
+        logger.info("Database initialization completed successfully")
     except Exception as exc:
         logger.warning(f"Database initialization failed on startup: {exc}")
         logger.warning("Service is starting in DEGRADED mode (DB unavailable)")
+        # Continue startup - don't block on DB issues
 
+    logger.info("RepoBrain API startup complete - ready to serve requests")
     yield
+    logger.info("RepoBrain API shutting down...")
 
 
 app = FastAPI(

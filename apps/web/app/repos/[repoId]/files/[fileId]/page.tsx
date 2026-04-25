@@ -100,44 +100,39 @@ export default async function FileDetailPage({ params, searchParams }: Props) {
   const previewUrl = `/api/v1/repos/${repoId}/files/${fileId}/preview`;
 
   return (
-    <div className="space-y-10 pb-24 relative">
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-500/5 blur-[120px] -z-10 animate-pulse-subtle" />
-
-      {/* Breadcrumbs & Modern Header */}
-      <div className="animate-in fade-in slide-in-from-top-4 duration-700">
-        <div className="flex items-center gap-3 mb-6 px-1">
-          <Link href={`/repos/${repoId}/files`} className="flex items-center gap-2 text-[10px] font-extrabold text-slate-500 hover:text-indigo-400 uppercase tracking-[0.3em] transition-all group/back">
-            <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1 transition-transform" />
+    <div className="space-y-6 pb-12">
+      {/* Breadcrumbs & Header */}
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div className="flex items-center gap-2 mb-4 px-1">
+          <Link href={`/repos/${repoId}/files`} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 hover:text-indigo-400 uppercase tracking-wider transition-colors group/back">
+            <ArrowLeft size={10} className="group-hover:-translate-x-0.5 transition-transform" />
             Explorer
           </Link>
-          <ChevronRight className="h-3 w-3 text-slate-800" />
-          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-[0.3em] truncate max-w-[400px]">{(file?.path || "File").split("/").pop()}</span>
+          <ChevronRight size={10} className="text-slate-800" />
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate max-w-[400px]">{(file?.path || "File").split("/").pop()}</span>
         </div>
 
-        <div className="relative group">
-          <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-3xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200" />
-          <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between p-8 rounded-3xl bg-slate-900/40 border border-white/5 backdrop-blur-sm inner-glow">
-            <div className="flex items-center gap-6">
-              <div className="h-14 w-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 ring-1 ring-indigo-500/20 shadow-premium animate-float">
-                <FileCode className="h-7 w-7" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-extrabold text-white tracking-tight mb-1">
-                  Source Inspector
-                </h1>
-                <p className="text-slate-400 font-mono text-sm max-w-2xl truncate opacity-70">
-                  {file?.path || "Awaiting structural data..."}
-                </p>
-              </div>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between px-4 py-3.5 rounded-lg bg-slate-900/40 border border-border/40 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="h-10 w-10 rounded bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+              <FileCode size={20} />
             </div>
-            <div className="flex items-center gap-3">
-              <a href={rawUrl} {...rawAssetLinkProps}>
-                <Button variant="outline" size="sm" className="bg-white/[0.02] border-white/5 hover:bg-white/[0.05] h-11 px-6 rounded-xl font-bold">
-                  <Download className="mr-2 h-4 w-4" />
-                  Source
-                </Button>
-              </a>
+            <div>
+              <h1 className="text-lg font-bold text-white tracking-tight leading-none mb-1">
+                File Inspector
+              </h1>
+              <p className="text-slate-500 font-mono text-[11px] max-w-2xl truncate">
+                {file?.path || "..."}
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a href={rawUrl} {...rawAssetLinkProps}>
+              <Button variant="outline" size="sm" className="h-8 px-4 text-xs">
+                <Download size={14} className="mr-2" />
+                Raw Source
+              </Button>
+            </a>
           </div>
         </div>
       </div>
@@ -145,20 +140,20 @@ export default async function FileDetailPage({ params, searchParams }: Props) {
       <RepoSubnav repoId={repoId} />
 
       {fetchError ? (
-        <Card className="border-rose-500/20 bg-rose-500/5 shadow-premium animate-in fade-in zoom-in-95 duration-500">
-          <div className="flex items-start gap-8 p-10">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.5rem] bg-rose-500/10 text-rose-500 shadow-glow/10 border border-rose-500/20">
-              <AlertCircle className="h-8 w-8" />
+        <Card className="border-rose-500/20 bg-rose-500/5 shadow-sm animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex items-start gap-4 p-6">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-rose-500/10 text-rose-500 border border-rose-500/20">
+              <AlertCircle size={20} />
             </div>
-            <div className="pt-1">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.3em] text-rose-500 mb-2 opacity-60">System Exception</p>
-              <h2 className="text-2xl font-extrabold text-rose-200 tracking-tight">Artifact extraction failed</h2>
-              <p className="mt-4 text-lg text-rose-400/70 leading-relaxed max-w-2xl font-medium">{fetchError}</p>
-              <div className="mt-10">
+            <div className="pt-0.5">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-rose-500 mb-1 opacity-60">Error</p>
+              <h2 className="text-base font-bold text-rose-200 tracking-tight">Failed to load file</h2>
+              <p className="mt-2 text-sm text-rose-400/80 leading-relaxed max-w-2xl">{fetchError}</p>
+              <div className="mt-6">
                 <Link href={`/repos/${repoId}/files`}>
-                  <Button variant="indigo" size="sm" className="h-12 px-10 rounded-2xl font-extrabold shadow-lg shadow-rose-500/10">
-                    <ArrowLeft className="mr-3 h-5 w-5" />
-                    Back to Core Explorer
+                  <Button variant="primary" size="sm" className="h-8 px-4">
+                    <ArrowLeft size={14} className="mr-2" />
+                    Back to Explorer
                   </Button>
                 </Link>
               </div>
@@ -167,85 +162,74 @@ export default async function FileDetailPage({ params, searchParams }: Props) {
         </Card>
       ) : !file ? (
         <EmptyState
-          title="Artifact Refraction"
-          description="The logical representation of this artifact is no longer detected in the intelligence graph."
+          title="File Not Found"
+          description="The requested file could not be located in the indexed codebase."
           actionHref={`/repos/${repoId}/files`}
-          actionLabel="Consult Core Explorer"
+          actionLabel="Back to Explorer"
         />
       ) : (
-        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-          {/* Executive Metadata Section */}
-          <div className="grid gap-6 lg:grid-cols-4">
-            <Card className="lg:col-span-3 bg-white/[0.01] border-white/5 shadow-premium p-8 inner-glow relative group flex flex-col justify-center rounded-3xl">
-              <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-indigo-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="flex flex-wrap items-center justify-between gap-8">
-                <div className="flex items-center gap-6">
-                   <div className="h-14 w-14 rounded-2xl bg-indigo-500/5 border border-white/5 flex items-center justify-center text-indigo-400 shadow-inner group-hover:scale-105 transition-transform duration-500">
-                      <FileCode className="h-7 w-7 opacity-70 group-hover:opacity-100 transition-opacity" />
-                   </div>
-                   <div className="min-w-0">
-                      <div className="flex items-center gap-3 mb-1">
-                        <h2 className="truncate text-3xl font-extrabold text-white tracking-tighter">
-                          {file.path.split("/").pop()}
-                        </h2>
-                        {highlightLines.length > 0 && (
-                          <div className="flex items-center gap-2 text-indigo-400 animate-pulse-subtle bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20 group-hover:scale-105 transition-transform">
-                            <Sparkles className="h-3.5 w-3.5" />
-                            <span className="text-[10px] font-black uppercase tracking-widest leading-none">L{highlightLines[0]} Target</span>
-                          </div>
-                        )}
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          {/* Metadata Grid */}
+          <div className="grid gap-4 lg:grid-cols-4">
+            <Card className="lg:col-span-3 bg-slate-900/20 border-border/40 p-4 flex items-center justify-between gap-6 rounded-lg shadow-premium">
+              <div className="flex items-center gap-4">
+                <div className="h-10 w-10 rounded bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <FileCode size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <h2 className="truncate text-base font-bold text-slate-200 tracking-tight">
+                      {file.path.split("/").pop()}
+                    </h2>
+                    {highlightLines.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">
+                        <Sparkles size={10} />
+                        <span className="text-[9px] font-bold uppercase tracking-wider leading-none">Line {highlightLines[0]}</span>
                       </div>
-                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.3em] font-mono opacity-60 truncate max-w-xl group-hover:opacity-100 transition-opacity">{file.path}</div>
-                   </div>
+                    )}
+                  </div>
+                  <div className="text-[10px] font-medium text-slate-600 uppercase tracking-wider font-mono truncate max-w-xl">{file.path}</div>
                 </div>
-                
-                <div className="flex items-center gap-8 py-2 px-6 rounded-2xl bg-slate-900 border border-white/5 shadow-inner">
-                   <Metric icon={<Hash size={16} />} label="Lines" value={file.line_count || 0} />
-                   <div className="h-8 w-[1px] bg-white/5" />
-                   <Metric icon={<Database size={16} />} label="Context" value={file.file_kind} />
-                   <div className="h-8 w-[1px] bg-white/5" />
-                   <Metric icon={<FileText size={16} />} label="Syntax" value={file.language || "Plain"} accent />
-                </div>
+              </div>
+              
+              <div className="flex items-center gap-6 px-4 py-2 rounded bg-slate-950/40 border border-white/5 shadow-inner">
+                <Metric icon={<Hash size={12} />} label="Lines" value={file.line_count || 0} />
+                <div className="h-6 w-[1px] bg-white/5" />
+                <Metric icon={<Database size={12} />} label="Role" value={file.file_kind} />
+                <div className="h-6 w-[1px] bg-white/5" />
+                <Metric icon={<FileText size={12} />} label="Type" value={file.language || "Text"} accent />
               </div>
             </Card>
 
-            <Card className="bg-gradient-to-br from-indigo-500/10 via-transparent to-transparent border-indigo-500/20 p-8 shadow-premium inner-glow flex flex-col items-center justify-center text-center rounded-3xl relative overflow-hidden group">
-               <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity duration-1000 rotate-12">
-                  <Database size={80} />
-               </div>
-               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400/80 mb-3 group-hover:translate-y-[-2px] transition-transform">Intelligence State</p>
-               <Badge label={file.parse_status || "synced"} tone={file.parse_status === "completed" ? "green" : "blue"} className="px-6 py-2 rounded-xl text-xs font-black shadow-lg" />
-               {file.is_generated && <div className="mt-3 px-3 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] font-black text-amber-500 uppercase tracking-widest">Synthetic Artifact</div>}
+            <Card className="bg-slate-900/40 border-border/40 p-4 flex flex-col items-center justify-center text-center rounded-lg shadow-premium group">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-2">Indexing Status</p>
+              <Badge label={file.parse_status || "indexed"} tone={file.parse_status === "completed" ? "green" : "blue"} className="px-3 py-1 text-[10px] font-bold" />
+              {file.is_generated && <div className="mt-2 px-2 py-0.5 rounded border border-amber-500/20 bg-amber-500/5 text-[9px] font-bold text-amber-500/80 uppercase tracking-wider">Generated</div>}
             </Card>
           </div>
 
-          {/* Premium Viewer Frame */}
-          <div className="relative group">
-            <div className="absolute -inset-1 bg-gradient-to-b from-white/[0.03] to-transparent rounded-[2.5rem] blur opacity-50 pointer-events-none" />
-            <Card className="p-0 overflow-hidden border-white/10 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8)] bg-slate-950 rounded-[2rem] relative z-10 inner-glow">
-              <div className="flex flex-wrap items-center justify-between gap-6 px-10 py-6 bg-white/[0.01] border-b border-white/10 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-indigo-500/[0.02] via-transparent to-transparent pointer-events-none" />
-                <div className="flex items-center gap-5 relative z-10">
-                  <div className="h-10 w-10 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center text-indigo-400 shadow-inner group-hover:border-indigo-500/30 transition-colors">
-                    <FileText className="h-5 w-5" />
+          {/* Viewer Container */}
+          <div className="relative">
+            <Card className="p-0 overflow-hidden border-border/40 shadow-premium bg-slate-950 rounded-lg">
+              <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 bg-white/[0.01] border-b border-white/5">
+                <div className="flex items-center gap-3">
+                  <div className="h-7 w-7 rounded bg-slate-900 border border-white/5 flex items-center justify-center text-indigo-400">
+                    <FileText size={14} />
                   </div>
-                  <div>
-                    <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 mb-0.5">
-                      Technical Workspace
-                    </h2>
-                    <p className="text-xs font-bold text-slate-400 opacity-60">Inspection Interface v2.4</p>
-                  </div>
+                  <h2 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    Technical Preview
+                  </h2>
                 </div>
                 
-                <div className="flex items-center gap-2 p-1.5 bg-slate-900/60 rounded-2xl border border-white/5 relative z-10 backdrop-blur-md">
+                <div className="flex items-center gap-1">
                   {[
-                    { href: `/repos/${repoId}/files`, icon: ArrowLeft, label: "Explorer" },
+                    { href: `/repos/${repoId}/files`, icon: ArrowLeft, label: "Files" },
                     { href: `/repos/${repoId}/search`, icon: SearchIcon, label: "Search" },
-                    { href: `/repos/${repoId}/ask`, icon: MessageSquare, label: "AI Grounding" }
+                    { href: `/repos/${repoId}/chat`, icon: MessageSquare, label: "Ask AI" }
                   ].map((item) => (
                     <Link key={item.label} href={item.href}>
-                      <Button variant="ghost" size="xs" className="h-10 px-5 text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 hover:text-white hover:bg-white/5 transition-all rounded-xl">
-                        <item.icon className="mr-2.5 h-4 w-4" />
+                      <Button variant="ghost" size="xs" className="h-7 px-2.5 text-[9px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-200 transition-colors">
+                        <item.icon size={12} className="mr-1.5" />
                         {item.label}
                       </Button>
                     </Link>
@@ -255,76 +239,58 @@ export default async function FileDetailPage({ params, searchParams }: Props) {
 
               <div className="relative">
                 {isImage ? (
-                  <div className="flex flex-col items-center justify-center p-24 bg-slate-900/20 relative overflow-hidden min-h-[600px]">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.08),transparent)] pointer-events-none" />
-                    <div className="relative group/img">
-                      <div className="absolute -inset-20 bg-indigo-500/10 rounded-full blur-[100px] opacity-20 group-hover/img:opacity-40 transition-opacity duration-1000" />
-                      <div className="relative shadow-premium rounded-2xl border border-white/10 overflow-hidden bg-[url('/checkerboard.png')] bg-repeat p-2">
-                        <img
-                          src={rawUrl}
-                          alt={file.path}
-                          className="max-w-full h-auto rounded-xl shadow-2xl scale-100 group-hover/img:scale-[1.02] transition-transform duration-1000"
-                        />
-                      </div>
+                  <div className="flex flex-col items-center justify-center p-16 bg-slate-900/20 min-h-[400px]">
+                    <div className="relative shadow-lg rounded border border-white/10 overflow-hidden bg-[url('/checkerboard.png')] bg-repeat p-1">
+                      <img
+                        src={rawUrl}
+                        alt={file.path}
+                        className="max-w-full h-auto rounded-sm"
+                      />
                     </div>
-                    <div className="mt-16 flex items-center gap-4 px-6 py-3 rounded-full border border-white/10 bg-slate-950/80 text-[10px] text-slate-500 font-black uppercase tracking-[0.4em] backdrop-blur-xl shadow-2xl animate-float">
-                      <div className="h-2 w-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,1)]" />
-                      Visual Representation
+                    <div className="mt-8 flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/5 bg-slate-950/80 text-[9px] text-slate-600 font-bold uppercase tracking-wider shadow-sm">
+                      <div className="h-1.5 w-1.5 rounded-full bg-indigo-500/50" />
+                      Image Preview
                     </div>
                   </div>
                 ) : isPdf ? (
-                  <div className="h-[90vh] w-full bg-slate-900/50 relative">
-                    <iframe src={rawUrl} className="h-full w-full border-0 absolute inset-0" title="Technical Document" />
-                    <div className="absolute inset-0 flex items-center justify-center -z-10 bg-slate-950 p-12 text-center">
-                      <div className="max-w-md space-y-8">
-                        <div className="mx-auto h-24 w-24 rounded-[2rem] bg-indigo-500/5 border border-white/10 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform duration-500 shadow-glow/10">
-                          <ExternalLink className="h-10 w-10 opacity-40" />
-                        </div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 italic">Structural rendering interface limited. Consult primary viewer.</p>
-                        <a href={rawUrl} target="_blank" rel="noopener noreferrer">
-                          <Button variant="indigo" className="px-12 h-14 rounded-2xl font-black text-[11px] uppercase tracking-[0.3em] shadow-lg shadow-indigo-500/20">
-                            Launch Interface ↗
-                          </Button>
-                        </a>
-                      </div>
-                    </div>
+                  <div className="h-[70vh] w-full bg-slate-900/50 relative">
+                    <iframe src={rawUrl} className="h-full w-full border-0 absolute inset-0" title="PDF Preview" />
                   </div>
                 ) : isOffice ? (
                   isPpt ? (
                     <OfficePreviewPane previewUrl={previewUrl} rawUrl={rawUrl} filename={file.path.split("/").pop() || ""} />
                   ) : (
-                    <div className="px-10 py-40 text-center bg-slate-900/20">
-                      <Card className="flex flex-col items-center gap-12 border border-white/10 bg-slate-950/60 p-20 max-w-xl mx-auto shadow-premium rounded-[3rem] inner-glow group/office">
-                        <div className="flex h-28 w-28 items-center justify-center rounded-[2.5rem] bg-indigo-500/5 border border-indigo-500/20 text-indigo-400 shadow-inner group-hover/office:scale-110 transition-all duration-1000 rotate-6 group-hover/office:rotate-0">
-                          <Database className="h-14 w-14" />
+                    <div className="px-6 py-24 text-center bg-slate-900/20">
+                      <Card className="flex flex-col items-center gap-8 border border-white/5 bg-slate-950/60 p-12 max-w-md mx-auto shadow-premium rounded-xl">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-indigo-500/5 border border-indigo-500/20 text-indigo-400">
+                          <Database size={24} />
                         </div>
-                        <div className="space-y-6">
-                          <div className="text-sm font-black text-indigo-400 uppercase tracking-[0.4em] mb-2 opacity-80">Compound Data Artifact</div>
-                          <h3 className="text-3xl font-extrabold text-white tracking-tighter">Native environment required</h3>
-                          <p className="text-[17px] text-slate-500 leading-relaxed max-w-sm mx-auto font-medium">
-                             Artifact configuration **{file.path.split(".").pop()?.toUpperCase()}** is a complex binary structure designed for local execution.
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-bold text-white tracking-tight">Binary Format</h3>
+                          <p className="text-sm text-slate-500 leading-relaxed font-medium">
+                             This file format (**{file.path.split(".").pop()?.toUpperCase()}**) is a binary structure that requires a native application for full inspection.
                           </p>
                         </div>
                         <a href={rawUrl} {...rawAssetLinkProps}>
-                          <Button variant="indigo" className="px-14 h-16 rounded-3xl font-black uppercase text-[12px] tracking-[0.3em] shadow-2xl shadow-indigo-500/30 group/btn">
-                            <Download className="mr-4 h-6 w-6 group-hover/btn:translate-y-1 transition-transform" />
-                            Download Artifact
+                          <Button variant="primary" size="sm" className="px-8 h-10 shadow-sm">
+                            <Download size={16} className="mr-2" />
+                            Download File
                           </Button>
                         </a>
                       </Card>
                     </div>
                   )
                 ) : file.content ? (
-                  <div className="p-0 border-t border-white/5 animate-in fade-in duration-1000">
+                  <div className="p-0 border-t border-white/5">
                     <DataFileViewer content={file.content} path={file.path} highlightLines={highlightLines} />
                   </div>
                 ) : (
-                  <div className="px-10 py-48 text-center bg-slate-900/20">
-                    <div className="inline-flex flex-col items-center gap-8 text-slate-700">
-                      <div className="h-24 w-24 rounded-[2.5rem] bg-white/[0.02] border border-dashed border-white/10 flex items-center justify-center animate-pulse-subtle">
-                        <FileText className="h-12 w-12 opacity-30" />
+                  <div className="px-6 py-32 text-center bg-slate-900/20">
+                    <div className="inline-flex flex-col items-center gap-4 text-slate-700">
+                      <div className="h-16 w-16 rounded-lg bg-white/[0.02] border border-dashed border-white/10 flex items-center justify-center">
+                        <FileText size={24} className="opacity-20" />
                       </div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.5em] opacity-40">Zero byte surface detected</div>
+                      <div className="text-[9px] font-bold uppercase tracking-widest opacity-40">Empty or unreadable content</div>
                     </div>
                   </div>
                 )}
@@ -339,12 +305,12 @@ export default async function FileDetailPage({ params, searchParams }: Props) {
 
 function Metric({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string | number; accent?: boolean }) {
   return (
-    <div className="flex flex-col items-center">
-      <div className={`text-[9px] font-black uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1.5 ${accent ? "text-indigo-400" : "text-slate-600"}`}>
+    <div className="flex flex-col items-start min-w-[60px]">
+      <div className={`text-[9px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5 ${accent ? "text-indigo-400" : "text-slate-600"}`}>
         {icon}
         {label}
       </div>
-      <div className={`text-lg font-extrabold tracking-tight ${accent ? "text-white" : "text-slate-300"}`}>{value}</div>
+      <div className={`text-sm font-bold tracking-tight ${accent ? "text-slate-200" : "text-slate-400"}`}>{value}</div>
     </div>
   );
 }

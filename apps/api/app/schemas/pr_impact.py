@@ -27,6 +27,9 @@ class ImpactedFileItem(BaseModel):
     primary_category: str = "module"
     symbol_hits: list[str] = Field(default_factory=list)
     why_now: str = ""
+    # New fields for evidence categorization
+    reason_tag: str = "semantic_reference_only"
+    evidence_strength: str = "low"
 
 
 class ReviewerSuggestion(BaseModel):
@@ -127,3 +130,10 @@ class PRImpactResponse(BaseModel):
     executive_summary: str = ""
     partial_failure: bool = False
     partial_failure_reasons: list[str] = Field(default_factory=list)
+    # New: impact confidence and evidence breakdown
+    impact_confidence: str = "low"
+    evidence_breakdown: dict = Field(default_factory=dict)
+    # New: change classification and score explanation
+    change_types: list[str] = Field(default_factory=list)
+    is_trivial_change: bool = False
+    score_explanation: str = ""

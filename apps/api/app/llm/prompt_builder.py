@@ -209,24 +209,49 @@ def _format_context_for_llm(chunks: list[dict], intent: str = "general") -> str:
     - Skip chunks with no meaningful content.
     - For each chunk, extract the smallest high-signal window around the best matching lines.
     - Prefer symbol-bearing lines (imports, defs, assignments, calls, routes).
-    - Strip blank lines and comment-only lines.
-    - Hard cap per block (400 chars for code, 600 for summary).
-    - Cap total blocks at 5.
+    - Preserve critical comments (SECURITY, TODO, WARN, NOTE, IMPORTANT, FIXME).
+    - Strip blank lines and routine comment-only lines.
+    - Hard cap per block (varies by intent).
+    - Cap total blocks at 6.
     - Number each block so the model can reference them.
     """
     if not chunks:
         return "NO REPO EVIDENCE FOUND."
 
+    import re as _re_fmt
+
     _SYMBOL_INDICATORS = (
-        "import ", "from ", "def ", "class ", "async def ",
-        "function ", "const ", "let ", "var ", "export ",
+        "import ", "from ", "def ", "class ", "async def ", "async function ",
+        "function ", "const ", "let ", "var ", "export ", "export default ",
         "return ", "raise ", "@", "->", "=>", "route", "app.",
+        "interface ", "type ", "enum ", "struct ", "func ",
+        "@app.", "@router.", "@blueprint.",
     )
 
-    # For summary intents, allow slightly more content per block
+    # Critical comment patterns — preserve these even in compressed mode
+    _CRITICAL_COMMENT_RE = _re_fmt.compile(
+        r"^\s*(?:#|//|/\*)\s*(?:SECURITY|TODO|WARN|WARNING|NOTE|IMPORTANT|FIXME|HACK|BUG|XXX)[\s:]",
+        _re_fmt.IGNORECASE,
+    )
+
+    # Intent-specific block size limits
     _is_summary = intent in ("repo_summary", "architecture_explanation")
-    _MAX_BLOCK_CHARS = 700 if _is_summary else 400
-    _MAX_BLOCKS = 5
+    _is_code = intent in ("semantic_qa", "symbol_lookup", "flow_question")
+    _is_impact = intent in ("line_impact", "code_snippet_impact", "line_change_impact",
+                            "dependency_impact", "route_feature_impact", "config_impact")
+
+    if _is_summary:
+        _MAX_BLOCK_CHARS = 800
+        _MAX_BLOCKS = 6
+    elif _is_code:
+        _MAX_BLOCK_CHARS = 600
+        _MAX_BLOCKS = 6
+    elif _is_impact:
+        _MAX_BLOCK_CHARS = 500
+        _MAX_BLOCKS = 5
+    else:
+        _MAX_BLOCK_CHARS = 450
+        _MAX_BLOCKS = 5
 
     blocks = []
     for idx, c in enumerate(chunks[:_MAX_BLOCKS * 2], 1):  # over-fetch, then cap
@@ -243,8 +268,7 @@ def _format_context_for_llm(chunks: list[dict], intent: str = "general") -> str:
         if not raw_snippet:
             continue
 
-        # Strip header lines injected by retrieval helpers
-        import re as _re_fmt
+        # Strip retrieval-injected header lines
         lines = raw_snippet.splitlines()
         lines = [
             l for l in lines
@@ -259,16 +283,21 @@ def _format_context_for_llm(chunks: list[dict], intent: str = "general") -> str:
             )
         ]
 
-        # Filter noise lines
-        meaningful_lines = [
-            l for l in lines
-            if l.strip()
-            and not l.strip().startswith("#")
-            and not l.strip().startswith("//")
-            and not l.strip().startswith("/*")
-            and not l.strip().startswith("*")
-            and len(l.strip()) > 3
-        ]
+        # Filter noise lines — but preserve critical comments
+        meaningful_lines = []
+        for l in lines:
+            stripped = l.strip()
+            if not stripped or len(stripped) <= 3:
+                continue
+            # Preserve critical comments
+            if _CRITICAL_COMMENT_RE.match(l):
+                meaningful_lines.append(l)
+                continue
+            # Skip routine comment-only lines
+            if (stripped.startswith("#") or stripped.startswith("//")
+                    or stripped.startswith("/*") or stripped.startswith("*")):
+                continue
+            meaningful_lines.append(l)
 
         if not meaningful_lines:
             continue
@@ -280,14 +309,14 @@ def _format_context_for_llm(chunks: list[dict], intent: str = "general") -> str:
                 if any(tok in l for tok in _SYMBOL_INDICATORS)
             ]
             if symbol_line_indices:
-                # Take a ±3 window around the first symbol-bearing line
+                # Take a ±4 window around the first symbol-bearing line (was ±3)
                 center = symbol_line_indices[0]
-                window_start = max(0, center - 3)
-                window_end = min(len(meaningful_lines), center + 4)
+                window_start = max(0, center - 4)
+                window_end = min(len(meaningful_lines), center + 5)
                 meaningful_lines = meaningful_lines[window_start:window_end]
             else:
-                # No symbol lines — take first 12 meaningful lines
-                meaningful_lines = meaningful_lines[:12]
+                # No symbol lines — take first 15 meaningful lines (was 12)
+                meaningful_lines = meaningful_lines[:15]
 
         snippet_text = "\n".join(meaningful_lines)
         if len(snippet_text) > _MAX_BLOCK_CHARS:

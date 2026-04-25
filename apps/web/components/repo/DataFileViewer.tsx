@@ -51,54 +51,54 @@ export function DataFileViewer({ content, path, highlightLines = [] }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-slate-400">
+    <div className="flex flex-col h-full space-y-3">
+      <div className="flex items-center justify-between px-1">
+        <div className="text-[11px] font-medium text-slate-500">
           {viewMode === "table" && isTruncated && (
-            <span>Showing first {maxRows} rows of {rows.length}</span>
+            <span>Showing {maxRows} of {rows.length} records</span>
           )}
         </div>
-        <div className="flex bg-slate-900 border border-slate-700 rounded-md p-1">
+        <div className="flex bg-slate-950 border border-white/5 rounded-md p-1 shadow-inner">
           <button
             onClick={() => setViewMode("table")}
-            className={`px-3 py-1 text-xs font-semibold rounded ${
-              viewMode === "table" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
+            className={`px-3 py-1 text-[11px] font-bold rounded transition-colors ${
+              viewMode === "table" ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" : "text-slate-600 hover:text-slate-400"
             }`}
           >
-            Table View
+            Table
           </button>
           <button
             onClick={() => setViewMode("raw")}
-            className={`px-3 py-1 text-xs font-semibold rounded ${
-              viewMode === "raw" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
+            className={`px-3 py-1 text-[11px] font-bold rounded transition-colors ${
+              viewMode === "raw" ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" : "text-slate-600 hover:text-slate-400"
             }`}
           >
-            Raw View
+            Raw
           </button>
         </div>
       </div>
 
       {viewMode === "table" ? (
-        <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/50">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-800 text-xs uppercase text-slate-400 border-b border-slate-700 sticky top-0">
+        <div className="overflow-x-auto rounded border border-border/40 bg-slate-950/20">
+          <table className="w-full text-left text-sm text-slate-400">
+            <thead className="bg-slate-900/60 text-[10px] uppercase font-bold text-slate-600 border-b border-border/40 sticky top-0">
               <tr>
-                <th className="px-4 py-3 font-medium bg-slate-800/80 w-12 text-center border-r border-slate-700">#</th>
+                <th className="px-4 py-2 w-12 text-center border-r border-border/40 font-bold">#</th>
                 {displayRows[0]?.map((col, idx) => (
-                  <th key={idx} className="px-4 py-3 font-medium bg-slate-800/80 whitespace-nowrap">
+                  <th key={idx} className="px-4 py-2 whitespace-nowrap tracking-wider">
                     {col.trim()}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-white/[0.02]">
               {displayRows.slice(1).map((row, rIdx) => (
-                <tr key={rIdx} className="hover:bg-slate-800/50 transition-colors">
-                  <td className="px-4 py-2 font-mono text-xs text-slate-500 border-r border-slate-700 text-center">
+                <tr key={rIdx} className="hover:bg-white/[0.01] transition-colors">
+                  <td className="px-4 py-2 font-mono text-[10px] text-slate-700 border-r border-border/40 text-center bg-slate-950/20">
                     {rIdx + 2}
                   </td>
                   {row.map((col, cIdx) => (
-                    <td key={cIdx} className="px-4 py-2 whitespace-nowrap truncate max-w-[300px]">
+                    <td key={cIdx} className="px-4 py-2 whitespace-nowrap truncate max-w-[300px] text-[12px] font-medium">
                       {col.trim()}
                     </td>
                   ))}

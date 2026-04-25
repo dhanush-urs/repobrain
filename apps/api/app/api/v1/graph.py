@@ -35,6 +35,26 @@ def _cluster_id_from_path(path: str, depth: int = 2) -> str:
     return "/".join(parts[:depth])
 
 
+def _adaptive_cluster_depth(all_files: list) -> int:
+    """
+    Choose cluster depth so we get at least 2 distinct clusters.
+    Starts at depth=2 and increases up to depth=4 if needed.
+    This prevents all files collapsing into a single cluster (e.g. Java monorepos).
+    """
+    for depth in range(2, 5):
+        clusters = set()
+        for row in all_files:
+            path = row[1]  # path is second column
+            parts = path.split("/")
+            if len(parts) <= 1:
+                clusters.add("root")
+            else:
+                clusters.add("/".join(parts[:depth]))
+        if len(clusters) >= 2:
+            return depth
+    return 2  # fallback
+
+
 def _risk_color(risk_score: float) -> str:
     if risk_score >= 70:
         return "high"
@@ -71,6 +91,9 @@ def get_repo_knowledge_graph(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     requested_types = [t.strip() for t in edge_types.split(",") if t.strip()]
+    # Always include semantic edge types (route_to_service, service_to_model, uses_symbol, inferred_api)
+    _SEMANTIC_TYPES = {"route_to_service", "service_to_model", "uses_symbol", "inferred_api"}
+    all_requested_types = list(dict.fromkeys(requested_types + list(_SEMANTIC_TYPES)))
 
     # ── Load all files ───────────────────────────────────────────────────────
     all_files = list(db.execute(
@@ -85,7 +108,7 @@ def get_repo_knowledge_graph(
 
     file_map = {row[0]: row for row in all_files}  # id → row
 
-    # ── Load resolved edges ──────────────────────────────────────────────────
+    # ── Load resolved edges (including semantic edge types) ──────────────────
     raw_edges = list(db.execute(
         select(
             DependencyEdge.source_file_id,
@@ -95,7 +118,7 @@ def get_repo_knowledge_graph(
             DependencyEdge.repository_id == repo_id,
             DependencyEdge.target_file_id.isnot(None),
             DependencyEdge.source_file_id.isnot(None),
-            DependencyEdge.edge_type.in_(requested_types),
+            DependencyEdge.edge_type.in_(all_requested_types),
         )
     ).all())
 
@@ -163,7 +186,8 @@ def get_repo_knowledge_graph(
     n_inferred = len(inferred_edges)
 
     if view == "clusters":
-        return _build_cluster_graph(repo_id, all_files, all_edges, max_nodes, n_resolved, n_inferred)
+        cluster_depth = _adaptive_cluster_depth(all_files)
+        return _build_cluster_graph(repo_id, all_files, all_edges, max_nodes, n_resolved, n_inferred, cluster_depth=cluster_depth)
     else:
         return _build_file_graph(
             repo_id, view, all_files, file_map, all_edges,
@@ -203,10 +227,11 @@ def _build_cluster_graph(
     max_nodes: int,
     n_resolved: int = 0,
     n_inferred: int = 0,
+    cluster_depth: int = 2,
 ) -> dict:
     """
     Aggregate files into folder-based clusters.
-    Cluster ID = first 2 path segments (e.g. "app/services").
+    Cluster ID = first `cluster_depth` path segments (adaptive to avoid single-cluster collapse).
     Edges = aggregated inter-cluster dependency counts.
     Inferred edges are included and marked in edge metadata.
     """
@@ -218,7 +243,7 @@ def _build_cluster_graph(
     cluster_files: dict[str, list] = defaultdict(list)
 
     for fid, path, lang, kind, lc, is_gen, is_vendor, is_test in all_files:
-        cid = _cluster_id_from_path(path, depth=2)
+        cid = _cluster_id_from_path(path, depth=cluster_depth)
         file_to_cluster[fid] = cid
         cluster_files[cid].append({
             "id": fid, "path": path, "language": lang,
@@ -309,6 +334,89 @@ def _build_cluster_graph(
             })
             edge_idx += 1
 
+    # Sparse-repo fallback: if cluster view has no edges but file-level edges exist,
+    # promote the dominant cluster to show individual file nodes with their edges.
+    # This prevents the "6 disconnected boxes" problem for single-package repos.
+    if not edges and raw_edges:
+        # Find the cluster with the most files and edges
+        dominant_cluster = max(all_cluster_ids, key=lambda c: len(cluster_files[c]))
+        dominant_files = cluster_files[dominant_cluster]
+        dominant_file_ids = {f["id"] for f in dominant_files}
+
+        # Build file-level nodes for the dominant cluster
+        file_nodes = []
+        for f in dominant_files[:max_nodes]:
+            file_nodes.append({
+                "id": f["id"],
+                "type": "file",
+                "label": f["path"].split("/")[-1],
+                "path": f["path"],
+                "cluster_id": dominant_cluster,
+                "risk_score": 0.0,
+                "size": 1,
+                "degree": 0,
+                "language": f.get("language"),
+                "file_kind": f.get("file_kind", "source"),
+                "meta": {"file_count": 1, "changed": False, "impacted": False},
+            })
+
+        # Build file-level edges within the dominant cluster
+        file_node_ids = {n["id"] for n in file_nodes}
+        file_edges = []
+        fe_idx = 0
+        seen_fe: set[tuple[str, str]] = set()
+        for src_fid, tgt_fid, etype in raw_edges:
+            if src_fid in file_node_ids and tgt_fid in file_node_ids:
+                pair = (src_fid, tgt_fid)
+                if pair not in seen_fe:
+                    seen_fe.add(pair)
+                    is_inf = etype in {"inferred", "inferred_naming"}
+                    file_edges.append({
+                        "id": f"fe_{fe_idx}",
+                        "source": src_fid,
+                        "target": tgt_fid,
+                        "type": etype,
+                        "edge_type": etype,
+                        "weight": 1,
+                        "count": 1,
+                        "meta": {"is_inferred": is_inf},
+                    })
+                    fe_idx += 1
+
+        if file_edges:
+            # Update degree on nodes
+            degree_map: dict[str, int] = defaultdict(int)
+            for e in file_edges:
+                degree_map[e["source"]] += 1
+                degree_map[e["target"]] += 1
+            for n in file_nodes:
+                n["degree"] = degree_map.get(n["id"], 0)
+
+            total_files = len(all_files)
+            return {
+                "view": "clusters",
+                "repo_id": repo_id,
+                "nodes": file_nodes,
+                "edges": file_edges,
+                "legend": _legend("files"),
+                "total_files": total_files,
+                "total_resolved_edges": n_resolved,
+                "total_inferred_edges": n_inferred,
+                "truncated": False,
+                "sparse_fallback": True,
+                "graph_stats": {
+                    "node_count": len(file_nodes),
+                    "edge_count": len(file_edges),
+                    "resolved_edge_count": n_resolved,
+                    "inferred_edge_count": n_inferred,
+                    "cluster_count": 1,
+                    "disconnected_clusters": 0,
+                    "density": round(len(file_edges) / max(len(file_nodes), 1), 3),
+                    "sparse": n_resolved == 0,
+                    "typed_edge_counts": {},
+                },
+            }
+
     total_files = len(all_files)
 
     return {
@@ -321,6 +429,21 @@ def _build_cluster_graph(
         "total_resolved_edges": n_resolved,
         "total_inferred_edges": n_inferred,
         "truncated": len(cluster_set) < len(cluster_files),
+        "graph_stats": {
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "resolved_edge_count": n_resolved,
+            "inferred_edge_count": n_inferred,
+            "cluster_count": len(all_cluster_ids),
+            "disconnected_clusters": sum(1 for cid in all_cluster_ids if cluster_degree.get(cid, 0) == 0),
+            "density": round(n_resolved / max(total_files, 1), 3),
+            "sparse": n_resolved < total_files * 0.15,
+            "typed_edge_counts": {
+                et: sum(1 for _, _, e in raw_edges if e == et)
+                for et in {"route_to_service", "service_to_model", "uses_symbol", "inferred_api"}
+                if any(e == et for _, _, e in raw_edges)
+            },
+        },
     }
 
 
@@ -474,6 +597,15 @@ def _build_file_graph(
         "total_resolved_edges": n_resolved,
         "total_inferred_edges": n_inferred,
         "truncated": len(selected_ids) < len(all_file_ids),
+        "graph_stats": {
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "resolved_edge_count": n_resolved,
+            "inferred_edge_count": n_inferred,
+            "isolated_node_count": sum(1 for n in nodes if n.get("degree", 0) == 0),
+            "density": round(n_resolved / max(len(all_files), 1), 3),
+            "sparse": n_resolved < len(all_files) * 0.15,
+        },
     }
 
 

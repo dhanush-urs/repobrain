@@ -40,16 +40,16 @@ const config: Config = {
         },
       },
       borderRadius: {
-        "2xl": "calc(var(--radius) + 8px)",
-        "3xl": "calc(var(--radius) + 16px)",
-        xl: "calc(var(--radius) + 4px)",
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        "2xl": "calc(var(--radius) + 4px)",
+        "3xl": "calc(var(--radius) + 8px)",
+        xl: "var(--radius)",
+        lg: "calc(var(--radius) - 2px)",
+        md: "calc(var(--radius) - 4px)",
+        sm: "calc(var(--radius) - 6px)",
       },
       boxShadow: {
-        premium: "0 0 0 1px rgba(255,255,255,0.05), 0 8px 16px -4px rgba(0,0,0,0.4), 0 4px 8px -2px rgba(0,0,0,0.3)",
-        glow: "0 0 20px -5px rgba(99, 102, 241, 0.3)",
+        premium: "0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 4px 12px -2px rgba(0, 0, 0, 0.1)",
+        subtle: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
       },
       keyframes: {
         "accordion-down": {

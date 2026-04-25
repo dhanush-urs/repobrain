@@ -1,0 +1,384 @@
+{
+  "timestamp": 1777048203.072097,
+  "version": "10.0",
+  "test_type": "contracts",
+  "health_summary": {
+    "contracts_total": 32,
+    "contracts_passed": 32,
+    "contracts_failed": 0,
+    "contracts_skipped": 0,
+    "real_test_count": 32,
+    "placeholder_count": 0,
+    "pass_rate": 1.0,
+    "skip_ratio": 0.0,
+    "production_verdict": "strong contract coverage - ready for production"
+  },
+  "endpoint_support_matrix": {
+    "health": true,
+    "repo_creation": true,
+    "repo_listing": true,
+    "repo_detail": true,
+    "graph": true,
+    "flow": true,
+    "ask_repo": true,
+    "pr_impact": true,
+    "files": true,
+    "search": true,
+    "archetype": true,
+    "entrypoints": true,
+    "graph_health": true
+  },
+  "category_breakdown": {
+    "core": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    "graph": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    "flow": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "ask_repo": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    "pr_impact": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    "files": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "intelligence": {
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "timeout": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "coverage_warnings": [],
+  "test_results": [
+    {
+      "test_name": "api_root_responds",
+      "passed": true,
+      "skipped": false,
+      "category": "core",
+      "error": null,
+      "duration_ms": 0,
+      "details": {}
+    },
+    {
+      "test_name": "health_endpoint_responds",
+      "passed": true,
+      "skipped": false,
+      "category": "core",
+      "error": null,
+      "duration_ms": 0,
+      "details": {}
+    },
+    {
+      "test_name": "repo_creation_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "core",
+      "error": null,
+      "duration_ms": 4,
+      "details": {}
+    },
+    {
+      "test_name": "repo_listing_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "core",
+      "error": null,
+      "duration_ms": 12,
+      "details": {}
+    },
+    {
+      "test_name": "repo_detail_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "core",
+      "error": null,
+      "duration_ms": 2,
+      "details": {}
+    },
+    {
+      "test_name": "graph_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "graph",
+      "error": null,
+      "duration_ms": 2,
+      "details": {}
+    },
+    {
+      "test_name": "graph_schema_nodes_edges",
+      "passed": true,
+      "skipped": false,
+      "category": "graph",
+      "error": null,
+      "duration_ms": 1,
+      "details": {}
+    },
+    {
+      "test_name": "graph_no_null_node_ids",
+      "passed": true,
+      "skipped": false,
+      "category": "graph",
+      "error": null,
+      "duration_ms": null,
+      "details": {
+        "node_count": 0
+      }
+    },
+    {
+      "test_name": "graph_no_null_edge_refs",
+      "passed": true,
+      "skipped": false,
+      "category": "graph",
+      "error": null,
+      "duration_ms": null,
+      "details": {
+        "edge_count": 0
+      }
+    },
+    {
+      "test_name": "graph_empty_safe_regression",
+      "passed": true,
+      "skipped": false,
+      "category": "graph",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "flow_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "flow",
+      "error": null,
+      "duration_ms": 3,
+      "details": {}
+    },
+    {
+      "test_name": "flow_schema_valid",
+      "passed": true,
+      "skipped": false,
+      "category": "flow",
+      "error": null,
+      "duration_ms": 2,
+      "details": {}
+    },
+    {
+      "test_name": "flow_no_null_root_when_present",
+      "passed": true,
+      "skipped": false,
+      "category": "flow",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "flow_sparse_repo_safe",
+      "passed": true,
+      "skipped": false,
+      "category": "flow",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "ask_repo_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "ask_repo",
+      "error": null,
+      "duration_ms": 3,
+      "details": {}
+    },
+    {
+      "test_name": "ask_repo_answer_non_empty",
+      "passed": true,
+      "skipped": false,
+      "category": "ask_repo",
+      "error": null,
+      "duration_ms": null,
+      "details": {
+        "answer_length": 97
+      }
+    },
+    {
+      "test_name": "ask_repo_confidence_enum_valid",
+      "passed": true,
+      "skipped": false,
+      "category": "ask_repo",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "ask_repo_evidence_breakdown_sane",
+      "passed": true,
+      "skipped": false,
+      "category": "ask_repo",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "ask_repo_citation_file_ids_valid",
+      "passed": true,
+      "skipped": false,
+      "category": "ask_repo",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "pr_impact_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "pr_impact",
+      "error": null,
+      "duration_ms": 5,
+      "details": {}
+    },
+    {
+      "test_name": "pr_impact_schema_valid",
+      "passed": true,
+      "skipped": false,
+      "category": "pr_impact",
+      "error": null,
+      "duration_ms": 4,
+      "details": {}
+    },
+    {
+      "test_name": "pr_impact_unknown_file_safe",
+      "passed": true,
+      "skipped": false,
+      "category": "pr_impact",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "pr_impact_confidence_valid",
+      "passed": true,
+      "skipped": false,
+      "category": "pr_impact",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "pr_impact_score_explanation_non_empty",
+      "passed": true,
+      "skipped": false,
+      "category": "pr_impact",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "files_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "files",
+      "error": null,
+      "duration_ms": 3,
+      "details": {}
+    },
+    {
+      "test_name": "file_ids_valid",
+      "passed": true,
+      "skipped": false,
+      "category": "files",
+      "error": null,
+      "duration_ms": null,
+      "details": {
+        "files_checked": 0
+      }
+    },
+    {
+      "test_name": "search_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "files",
+      "error": null,
+      "duration_ms": 15,
+      "details": {}
+    },
+    {
+      "test_name": "search_result_file_ids_valid",
+      "passed": true,
+      "skipped": false,
+      "category": "files",
+      "error": null,
+      "duration_ms": null,
+      "details": {
+        "results_checked": 0
+      }
+    },
+    {
+      "test_name": "archetype_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "intelligence",
+      "error": null,
+      "duration_ms": 2,
+      "details": {}
+    },
+    {
+      "test_name": "entrypoints_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "intelligence",
+      "error": null,
+      "duration_ms": 2,
+      "details": {}
+    },
+    {
+      "test_name": "graph_health_endpoint_contract",
+      "passed": true,
+      "skipped": false,
+      "category": "intelligence",
+      "error": null,
+      "duration_ms": 2,
+      "details": {}
+    },
+    {
+      "test_name": "api_requests_timeout_properly",
+      "passed": true,
+      "skipped": false,
+      "category": "timeout",
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    }
+  ],
+  "failed_tests": [],
+  "summary": "Contract Tests: 32/32 real tests passed, 0 skipped"
+}

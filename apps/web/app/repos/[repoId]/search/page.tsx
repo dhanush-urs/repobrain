@@ -15,8 +15,8 @@ export default async function RepoSearchPage({ params }: Props) {
   return (
     <div className="space-y-8 pb-16">
       <PageHeader
-        title="Semantic Search"
-        subtitle="Search repository architecture and logic using neural embeddings."
+        title="Code Search"
+        subtitle="Search symbols, routes, services, and code patterns across the indexed repository."
         icon={<Search className="h-5 w-5" />}
       />
 

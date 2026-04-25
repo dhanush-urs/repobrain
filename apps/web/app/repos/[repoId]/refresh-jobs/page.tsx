@@ -36,7 +36,7 @@ export default async function RefreshJobsPage({ params }: Props) {
   const hasJobs = jobsData?.items?.length > 0;
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-12">
       <PageHeader
         title="Refresh Jobs"
         subtitle="Background synchronization, parsing, and re-indexing history."
@@ -47,38 +47,38 @@ export default async function RefreshJobsPage({ params }: Props) {
 
       <div className="space-y-8">
         {/* Live status */}
-        <section className="space-y-3">
+        <section className="space-y-2.5">
           <div className="flex items-center gap-2 px-1">
-            <Activity className="h-4 w-4 text-indigo-400" />
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Live Status</h2>
+            <Activity size={14} className="text-indigo-400" />
+            <h2 className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Operational Status</h2>
           </div>
-          <Card className="border-white/5 bg-slate-900/30">
+          <Card className="border-border/40 bg-slate-900/30 shadow-premium">
             <RepoStatusPanel repo={repo} />
           </Card>
         </section>
 
         {/* History */}
-        <section className="space-y-3">
+        <section className="space-y-2.5">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
-              <History className="h-4 w-4 text-indigo-400" />
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Refresh History</h2>
+              <History size={14} className="text-indigo-400" />
+              <h2 className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">System Events</h2>
             </div>
             {hasJobs && (
-              <span className="text-xs text-slate-500">{jobsData.total} events</span>
+              <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{jobsData.total} logs</span>
             )}
           </div>
 
           {!hasJobs ? (
-            <Card className="flex flex-col items-center justify-center py-16 text-center border-dashed border-white/10 bg-transparent">
-              <History className="h-8 w-8 text-slate-600 mb-3" />
-              <h3 className="text-base font-semibold text-white mb-1">No refresh history</h3>
-              <p className="text-sm text-slate-400 max-w-sm">
-                No background operations have been logged yet. They will appear here once triggered.
+            <Card className="flex flex-col items-center justify-center py-12 text-center border-dashed border-white/10 bg-transparent">
+              <History size={24} className="text-slate-700 mb-3" />
+              <h3 className="text-sm font-semibold text-white mb-1">No event history</h3>
+              <p className="text-xs text-slate-500 max-w-sm">
+                Operational logs will appear here once background tasks are triggered.
               </p>
             </Card>
           ) : (
-            <Card className="p-0 overflow-hidden border-white/5 bg-slate-950/40">
+            <Card className="p-0 overflow-hidden border-border/40 bg-slate-950/40 shadow-premium">
               <RefreshJobsList repoId={repoId} initialJobs={jobsData.items} />
             </Card>
           )}

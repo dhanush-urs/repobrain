@@ -1,0 +1,172 @@
+{
+  "timestamp": "2026-04-24T21:55:46.262128",
+  "version": "10.0",
+  "test_mode": "smoke",
+  "contract_results": {
+    "timestamp": 1777047946.237816,
+    "version": "10.0",
+    "test_type": "contracts",
+    "health_summary": {
+      "contracts_total": 6,
+      "contracts_passed": 6,
+      "contracts_failed": 0,
+      "contracts_skipped": 0,
+      "real_test_count": 6,
+      "placeholder_count": 0,
+      "pass_rate": 1.0,
+      "skip_ratio": 0.0,
+      "production_verdict": "basic stability only - insufficient coverage"
+    },
+    "endpoint_support_matrix": {
+      "health": true,
+      "repo_creation": true,
+      "repo_listing": true,
+      "repo_detail": true
+    },
+    "category_breakdown": {
+      "core": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "timeout": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    "coverage_warnings": [
+      "graph category: no tests executed",
+      "flow category: no tests executed",
+      "ask_repo category: no tests executed",
+      "pr_impact category: no tests executed"
+    ],
+    "test_results": [
+      {
+        "test_name": "api_root_responds",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 10,
+        "details": {}
+      },
+      {
+        "test_name": "health_endpoint_responds",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 1,
+        "details": {}
+      },
+      {
+        "test_name": "repo_creation_contract",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 29,
+        "details": {}
+      },
+      {
+        "test_name": "repo_listing_contract",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 22,
+        "details": {}
+      },
+      {
+        "test_name": "repo_detail_contract",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 3,
+        "details": {}
+      },
+      {
+        "test_name": "api_requests_timeout_properly",
+        "passed": true,
+        "skipped": false,
+        "category": "timeout",
+        "error": null,
+        "duration_ms": null,
+        "details": {}
+      }
+    ],
+    "failed_tests": [],
+    "summary": "Contract Tests: 6/6 real tests passed, 0 skipped"
+  },
+  "benchmark_results": {
+    "timestamp": 1777047946.262115,
+    "version": "10.0",
+    "test_type": "benchmark",
+    "overall_score": 0.0,
+    "total_repos_tested": 3,
+    "category_averages": {
+      "ask_repo_credibility": 0,
+      "archetype_correctness": 0,
+      "entrypoint_plausibility": 0,
+      "graph_usefulness": 0,
+      "execution_flow_plausibility": 0,
+      "pr_impact_usefulness": 0
+    },
+    "performance_distribution": {
+      "excellent": 0,
+      "good": 0,
+      "acceptable": 0,
+      "poor": 3
+    },
+    "total_penalties": 3,
+    "penalty_summary": [
+      "https://github.com/fastapi/full-stack-fastapi-template: Repository not available",
+      "https://github.com/vitejs/vite: Repository not available",
+      "https://github.com/dhanush-urs/airline_reservation: Repository not available"
+    ],
+    "results": [
+      {
+        "repo_url": "https://github.com/fastapi/full-stack-fastapi-template",
+        "repo_id": "",
+        "total_score": 0.0,
+        "scores": {},
+        "penalties": [
+          "Repository not available"
+        ],
+        "error": "Repository not available or not indexed"
+      },
+      {
+        "repo_url": "https://github.com/vitejs/vite",
+        "repo_id": "",
+        "total_score": 0.0,
+        "scores": {},
+        "penalties": [
+          "Repository not available"
+        ],
+        "error": "Repository not available or not indexed"
+      },
+      {
+        "repo_url": "https://github.com/dhanush-urs/airline_reservation",
+        "repo_id": "",
+        "total_score": 0.0,
+        "scores": {},
+        "penalties": [
+          "Repository not available"
+        ],
+        "error": "Repository not available or not indexed"
+      }
+    ],
+    "summary": "Universal Benchmark: 0.0/10.0 average across 3 repos"
+  },
+  "overall_health": {
+    "overall_score": 0.6,
+    "status": "acceptable",
+    "contract_pass_rate": 1.0,
+    "benchmark_score": 0.0,
+    "recommendation": "System has some issues but core functionality works. Address failing tests before production."
+  }
+}

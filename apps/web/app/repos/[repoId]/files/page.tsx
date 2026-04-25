@@ -23,10 +23,10 @@ export default async function RepoFilesPage({ params }: Props) {
   }
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-6 pb-12">
       <PageHeader
         title="File Explorer"
-        subtitle="Search, filter, and inspect indexed repository files."
+        subtitle="Browse and inspect indexed repository files."
         className="mb-0"
       />
 
@@ -43,33 +43,33 @@ export default async function RepoFilesPage({ params }: Props) {
 
         if (isEmpty) {
           return (
-            <Card className="flex flex-col items-center justify-center py-24 text-center border-dashed border-white/10 bg-transparent">
-              <div className="mb-6 rounded-full bg-slate-900/50 p-6 text-slate-500 ring-1 ring-white/10 shadow-inner">
+            <Card className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-white/5 bg-white/[0.01]">
+              <div className="mb-4 rounded bg-slate-900/50 p-4 text-slate-700 border border-white/5 shadow-inner">
                 {isInProgress ? (
-                  <Clock className="h-12 w-12 animate-pulse text-indigo-400" />
+                  <Clock size={20} className="animate-pulse text-indigo-500/60" />
                 ) : isError ? (
-                  <AlertCircle className="h-12 w-12 text-rose-500" />
+                  <AlertCircle size={20} className="text-rose-500/60" />
                 ) : (
-                  <Database className="h-12 w-12" />
+                  <Database size={20} />
                 )}
               </div>
               
-              <h3 className="text-2xl font-bold text-white mb-3 tracking-tight">
-                {isInProgress ? "Indexing in Progress..." : isError ? "Indexing Failed" : "No files available"}
+              <h3 className="text-base font-bold text-slate-200 mb-1 tracking-tight">
+                {isInProgress ? "Inventory Sync Active" : isError ? "Sync Failure" : "No Assets Detected"}
               </h3>
               
-              <p className="text-slate-400 max-w-sm mx-auto leading-relaxed">
+              <p className="text-[12px] text-slate-600 max-w-sm mx-auto leading-relaxed font-medium">
                 {isInProgress 
-                  ? "Repository file inventory is currently being built. Please check back in a few minutes." 
+                   ? "Building repository file inventory. High-fidelity intelligence will appear shortly." 
                   : isError 
-                    ? "The repository could not be indexed successfully. Files cannot be displayed." 
-                    : "Make sure the repository has been parsed before viewing files."}
+                    ? "Repository indexing failed. Check operational logs for exception details." 
+                    : "Initialize indexing to generate the codebase inventory."}
               </p>
               
               {isInProgress && (
-                <div className="mt-8 flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-semibold text-indigo-400 uppercase tracking-widest">
-                  <div className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-ping" />
-                  Analyzing Codebase
+                <div className="mt-6 flex items-center gap-2 px-2.5 py-1 rounded border border-indigo-500/20 bg-indigo-500/5 text-[9px] font-bold text-indigo-400 uppercase tracking-widest">
+                  <div className="h-1 w-1 rounded-full bg-indigo-500/50 animate-pulse" />
+                  Building Index
                 </div>
               )}
             </Card>
@@ -77,23 +77,23 @@ export default async function RepoFilesPage({ params }: Props) {
         }
 
         return (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
             {isInProgress && (
-              <div className="flex items-center gap-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-4 py-3 text-sm text-indigo-200 backdrop-blur-sm">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600/20 text-indigo-400 ring-1 ring-indigo-500/30">
-                  <Clock className="h-4 w-4 animate-pulse" />
+              <div className="flex items-center gap-3 rounded border border-indigo-500/20 bg-indigo-500/5 px-4 py-3 text-[11px] text-indigo-300/80 backdrop-blur-sm">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-slate-900 border border-indigo-500/20 text-indigo-400 shadow-inner">
+                  <Clock size={14} className="animate-pulse" />
                 </div>
                 <div>
-                  <span className="font-bold text-indigo-400">Indexing in progress:</span>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    File inventory and code analysis are actively running. Some files or metadata may not be visible yet.
-                  </p>
+                  <span className="font-bold text-indigo-400 uppercase tracking-wider">Analysis Active</span>
+                  <span className="ml-2 text-slate-500 font-medium leading-relaxed">
+                    Codebase metadata and structural inventory are currently being synthesized.
+                  </span>
                 </div>
               </div>
             )}
             
             <div className="grid gap-4">
-              <Card className="p-0 overflow-hidden border-white/5 bg-slate-900/40">
+              <Card className="p-0 overflow-hidden border-border/40 bg-slate-900/40 shadow-premium">
                 <FileFilters repoId={repoId} files={data?.items || []} />
               </Card>
             </div>

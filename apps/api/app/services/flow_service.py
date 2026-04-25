@@ -204,6 +204,32 @@ class RepoTopology:
             if tgt:
                 self._incoming[tgt].append(edge)
 
+        # If graph is sparse (no resolved edges), compute inferred edges
+        # so that flow expansion can traverse them
+        if not edge_rows:
+            try:
+                from app.services.graph_service import compute_inferred_edges
+                all_file_rows = list(self.db.execute(
+                    select(File.id, File.path, File.language, File.file_kind,
+                           File.line_count, File.is_generated, File.is_vendor, File.is_test)
+                    .where(File.repository_id == self.repository_id)
+                ).all())
+                inferred = compute_inferred_edges(
+                    db=self.db,
+                    repository_id=self.repository_id,
+                    resolved_edges=[],
+                    all_files=all_file_rows,
+                    sparsity_threshold=1.0,  # always run when no resolved edges
+                    max_inferred=200,
+                )
+                for i, (src, tgt, etype) in enumerate(inferred):
+                    edge = {"id": f"inf_{i}", "source": src, "target": tgt,
+                            "type": etype, "target_ref": None, "source_ref": None}
+                    self._outgoing[src].append(edge)
+                    self._incoming[tgt].append(edge)
+            except Exception:
+                pass  # always degrade gracefully
+
         self._loaded = True
 
     def _load_content(self, file_id: str) -> str:
@@ -578,6 +604,14 @@ _ENTRYPOINT_STEMS: list[tuple[str, float]] = [
     ("entry",      0.80),
     # Go
     ("main",       0.88),
+    # Java / GUI
+    ("main",       0.88),
+    ("launcher",   0.85),
+    ("application", 0.80),
+    ("startup",    0.75),
+    ("login",      0.70),   # GUI login screen
+    ("mainframe",  0.70),   # Swing GUI
+    ("mainwindow", 0.70),   # Qt/JavaFX GUI
     # Generic
     ("cli",        0.60),
     ("launcher",   0.55),
@@ -589,17 +623,22 @@ _ENTRYPOINT_DIR_BOOST: dict[str, float] = {
     "app":  0.05,
     "cmd":  0.15,   # Go convention
     "bin":  0.10,
+    "main": 0.12,   # Java convention
 }
 
 # Roles that are NOT entrypoints (penalize)
 _NON_ENTRYPOINT_ROLES = {"test", "config", "model", "util"}
 
 
-def _score_entrypoint(fi: dict, outgoing_count: int) -> float:
+def _score_entrypoint(fi: dict, outgoing_count: int, incoming_count: int = 0) -> float:
     """
     Score a file as a likely application entrypoint.
     Returns a float in [0, 1]. Higher = more likely entrypoint.
     Generic — no repo-specific logic.
+
+    Key insight: entrypoints have HIGH outgoing (they import many things) but
+    LOW incoming (nothing imports them — they are the root). Utility files have
+    high outgoing AND high incoming. We penalize high-incoming files.
     """
     path = fi.get("path", "")
     path_lower = path.lower().replace("\\", "/")
@@ -652,7 +691,16 @@ def _score_entrypoint(fi: dict, outgoing_count: int) -> float:
         # Named like an entrypoint but no imports — lower confidence
         score -= 0.10
 
-    # 5. Role bonus — route_handler files are often near entrypoints
+    # 5. Inbound penalty — real entrypoints are NOT imported by other files
+    # Utility files have many inbound edges; entrypoints have few or zero
+    if incoming_count >= 5:
+        score -= 0.20  # heavily imported = utility, not entrypoint
+    elif incoming_count >= 3:
+        score -= 0.10
+    elif incoming_count >= 1:
+        score -= 0.03
+
+    # 6. Role bonus — route_handler files are often near entrypoints
     if role == "route_handler":
         score += 0.05
 
@@ -665,19 +713,78 @@ def _detect_entrypoints(topo: RepoTopology) -> list[tuple[dict, float]]:
     Returns a list of (file_info, confidence_score) sorted by score descending.
     Never raises.
     """
-    # Count outgoing edges per file
+    # Count outgoing AND incoming edges per file
     outgoing_counts: dict[str, int] = {}
+    incoming_counts: dict[str, int] = {}
     for fi in topo.all_files():
         outgoing_counts[fi["id"]] = len(topo.outgoing(fi["id"]))
+        incoming_counts[fi["id"]] = len(topo.incoming(fi["id"]))
 
     candidates: list[tuple[dict, float]] = []
     for fi in topo.all_files():
-        score = _score_entrypoint(fi, outgoing_counts.get(fi["id"], 0))
+        score = _score_entrypoint(
+            fi,
+            outgoing_counts.get(fi["id"], 0),
+            incoming_counts.get(fi["id"], 0),
+        )
         if score > 0.3:  # minimum threshold
             candidates.append((fi, score))
 
     candidates.sort(key=lambda x: -x[1])
     return candidates[:5]  # top 5 candidates
+
+
+# ---------------------------------------------------------------------------
+# GUI/Event handler pattern detection — for better flow in desktop apps
+# ---------------------------------------------------------------------------
+
+def _detect_gui_patterns(content: str) -> dict[str, bool]:
+    """Detect GUI/event handler patterns in file content."""
+    if not content:
+        return {}
+    
+    content_lower = content.lower()
+    
+    return {
+        "has_main": bool(re.search(r'\bpublic\s+static\s+void\s+main\s*\(', content)),
+        "has_jframe": "jframe" in content_lower,
+        "has_jpanel": "jpanel" in content_lower,
+        "has_listener": bool(re.search(r'(ActionListener|MouseListener|WindowListener|ItemListener)', content)),
+        "has_event_handler": bool(re.search(r'(actionPerformed|mouseClicked|windowClosed|itemStateChanged)', content)),
+        "has_ui_init": bool(re.search(r'(setVisible|setDefaultCloseOperation|add\(|setLayout)', content)),
+        "has_service_call": bool(re.search(r'(Service|Manager|Repository|Dao|Db)\s*\(', content)),
+    }
+
+
+def _should_connect_files(src_fi: dict, tgt_fi: dict, topo: RepoTopology) -> bool:
+    """
+    Determine if two files should be connected in the flow based on:
+    - Direct dependency edges
+    - Role compatibility (route → service → repo → model)
+    - GUI event patterns
+    """
+    # Check for direct dependency
+    for edge in topo.outgoing(src_fi["id"]):
+        if edge.get("target") == tgt_fi["id"]:
+            return True
+    
+    # Check role compatibility
+    src_role = src_fi.get("role", "unknown")
+    tgt_role = tgt_fi.get("role", "unknown")
+    
+    # Define valid role transitions
+    valid_transitions = {
+        "route_handler": {"service", "repository", "model", "client"},
+        "service": {"repository", "model", "client", "service"},
+        "repository": {"model", "client"},
+        "model": {"repository"},
+        "middleware": {"route_handler", "service"},
+    }
+    
+    if src_role in valid_transitions and tgt_role in valid_transitions[src_role]:
+        return True
+    
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -689,10 +796,10 @@ def _flow_primary(topo: RepoTopology, hint: str, depth: int) -> dict:
     Infer the primary application flow automatically.
 
     Strategy:
-    1. Detect likely entrypoints using generic heuristics.
+    1. Detect likely entrypoints using generic heuristics (with inbound-edge penalty).
     2. If hint is provided, prefer the matching entrypoint.
     3. From the best entrypoint, BFS downstream through dependency edges.
-    4. Build a layered flow: entrypoint → routes → services → repositories → models.
+    4. Build a branching flow: entrypoint → [routes] → [services] → [models/db].
     5. Score and return with entrypoint candidates for the UI selector.
     """
     # Detect entrypoints
@@ -710,20 +817,30 @@ def _flow_primary(topo: RepoTopology, hint: str, depth: int) -> dict:
         best = max(all_files, key=lambda fi: len(topo.outgoing(fi["id"])))
         candidates = [(best, 0.35)]
 
-    # If hint provided, try to match it
+    # If hint provided, try to match it (exact stem match preferred)
     selected_fi, selected_conf = candidates[0]
     if hint:
+        hint_lower = hint.lower()
+        # Try exact stem match first
         for fi, conf in candidates:
-            if hint.lower() in fi["path"].lower() or fi["path"].lower().endswith(hint.lower()):
+            stem = fi["path"].split("/")[-1].rsplit(".", 1)[0].lower()
+            if stem == hint_lower or fi["path"].lower() == hint_lower:
                 selected_fi, selected_conf = fi, conf
                 break
+        else:
+            # Fall back to substring match
+            for fi, conf in candidates:
+                if hint_lower in fi["path"].lower():
+                    selected_fi, selected_conf = fi, conf
+                    break
 
-    # BFS downstream from entrypoint — build layered flow
+    # BFS downstream from entrypoint — build branching flow
+    # Use larger limits to capture real multi-layer apps
     downstream = _bfs_downstream(
         topo, selected_fi["id"],
-        max_depth=depth,
-        max_nodes=8,
-        exclude_roles={"test"},  # keep config in primary flow
+        max_depth=min(depth + 1, 6),   # allow one extra hop
+        max_nodes=12,                   # more nodes for branching
+        exclude_roles={"test"},         # keep config in primary flow
     )
 
     if not downstream:
@@ -737,19 +854,16 @@ def _flow_primary(topo: RepoTopology, hint: str, depth: int) -> dict:
             seen.add(fi["id"])
             ordered.append(fi)
 
-    # Build nodes and edges
+    # Build nodes
     nodes = [_build_flow_node(n) for n in ordered]
+
+    # Build edges — include ALL real dependency edges between nodes in the set
+    # (not just sequential chain), enabling branching visualization
+    # Also add role-based edges for better flow in layered architectures
+    node_id_set = {n["id"] for n in ordered}
+    seen_edge_pairs: set[tuple[str, str]] = set()
     edges = []
 
-    # Primary edges: sequential chain
-    for i in range(len(ordered) - 1):
-        edges.append(_build_flow_edge(ordered[i]["id"], ordered[i + 1]["id"], "calls"))
-
-    # Also add any direct dependency edges between non-adjacent nodes
-    node_id_set = {n["id"] for n in ordered}
-    seen_edge_pairs: set[tuple[str, str]] = {
-        (ordered[i]["id"], ordered[i + 1]["id"]) for i in range(len(ordered) - 1)
-    }
     for fi in ordered:
         for edge in topo.outgoing(fi["id"]):
             tgt = edge.get("target")
@@ -757,7 +871,27 @@ def _flow_primary(topo: RepoTopology, hint: str, depth: int) -> dict:
                 pair = (fi["id"], tgt)
                 if pair not in seen_edge_pairs:
                     seen_edge_pairs.add(pair)
-                    edges.append(_build_flow_edge(fi["id"], tgt, edge.get("type", "depends_on")))
+                    edges.append(_build_flow_edge(fi["id"], tgt, edge.get("type", "calls")))
+    
+    # Add role-based edges for better flow visualization in layered architectures
+    # This helps with Java GUI apps and other structured codebases
+    for i, src_fi in enumerate(ordered):
+        for j, tgt_fi in enumerate(ordered):
+            if i >= j:  # avoid duplicates and self-loops
+                continue
+            pair = (src_fi["id"], tgt_fi["id"])
+            if pair in seen_edge_pairs:
+                continue
+            
+            # Check if files should be connected based on role compatibility
+            if _should_connect_files(src_fi, tgt_fi, topo):
+                seen_edge_pairs.add(pair)
+                edges.append(_build_flow_edge(src_fi["id"], tgt_fi["id"], "calls"))
+
+    # If no real edges found (sparse graph), add sequential chain as fallback
+    if not edges and len(ordered) > 1:
+        for i in range(len(ordered) - 1):
+            edges.append(_build_flow_edge(ordered[i]["id"], ordered[i + 1]["id"], "calls"))
 
     score = _score_path(nodes) * selected_conf
     role_chain = " → ".join(
@@ -797,6 +931,8 @@ def _flow_primary(topo: RepoTopology, hint: str, depth: int) -> dict:
     if len(candidates) > 1:
         others = [fi["name"] for fi, _ in candidates[1:3]]
         notes.append(f"Other candidates: {', '.join(others)}.")
+    if not any(e.get("type") not in ("calls",) for e in edges):
+        notes.append("Flow edges derived from dependency graph.")
 
     result = _wrap_result("primary", selected_fi["path"], [path], notes=notes)
     result["entrypoint_candidates"] = entrypoint_candidates

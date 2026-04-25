@@ -1,0 +1,190 @@
+{
+  "timestamp": "2026-04-25T10:19:38.659340",
+  "version": "10.0",
+  "test_mode": "smoke",
+  "contract_results": {
+    "timestamp": 1777092574.574215,
+    "version": "10.0",
+    "test_type": "contracts",
+    "health_summary": {
+      "contracts_total": 6,
+      "contracts_passed": 6,
+      "contracts_failed": 0,
+      "contracts_skipped": 0,
+      "real_test_count": 6,
+      "placeholder_count": 0,
+      "pass_rate": 1.0,
+      "skip_ratio": 0.0,
+      "production_verdict": "basic stability only - insufficient coverage"
+    },
+    "endpoint_support_matrix": {
+      "health": true,
+      "repo_creation": true,
+      "repo_listing": true,
+      "repo_detail": true
+    },
+    "category_breakdown": {
+      "core": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "timeout": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    "coverage_warnings": [
+      "graph category: no tests executed",
+      "flow category: no tests executed",
+      "ask_repo category: no tests executed",
+      "pr_impact category: no tests executed"
+    ],
+    "test_results": [
+      {
+        "test_name": "api_root_responds",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 11,
+        "details": {}
+      },
+      {
+        "test_name": "health_endpoint_responds",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 1,
+        "details": {}
+      },
+      {
+        "test_name": "repo_creation_contract",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 27,
+        "details": {}
+      },
+      {
+        "test_name": "repo_listing_contract",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 19,
+        "details": {}
+      },
+      {
+        "test_name": "repo_detail_contract",
+        "passed": true,
+        "skipped": false,
+        "category": "core",
+        "error": null,
+        "duration_ms": 5,
+        "details": {}
+      },
+      {
+        "test_name": "api_requests_timeout_properly",
+        "passed": true,
+        "skipped": false,
+        "category": "timeout",
+        "error": null,
+        "duration_ms": null,
+        "details": {}
+      }
+    ],
+    "failed_tests": [],
+    "summary": "Contract Tests: 6/6 real tests passed, 0 skipped"
+  },
+  "benchmark_results": {
+    "timestamp": 1777092578.659304,
+    "version": "10.0",
+    "test_type": "benchmark",
+    "overall_score": 7.63,
+    "total_repos_tested": 3,
+    "category_averages": {
+      "ask_repo_credibility": 2.0,
+      "archetype_correctness": 0.83,
+      "entrypoint_plausibility": 0.8,
+      "graph_usefulness": 1.67,
+      "execution_flow_plausibility": 1.83,
+      "pr_impact_usefulness": 0.5
+    },
+    "performance_distribution": {
+      "excellent": 1,
+      "good": 2,
+      "acceptable": 0,
+      "poor": 0
+    },
+    "total_penalties": 2,
+    "penalty_summary": [
+      "https://github.com/fastapi/full-stack-fastapi-template: Incorrectly detected archetype: cli_tool",
+      "https://github.com/dhanush-urs/airline_reservation: Incorrectly detected archetype: cli_tool"
+    ],
+    "results": [
+      {
+        "repo_url": "https://github.com/fastapi/full-stack-fastapi-template",
+        "repo_id": "9a548483-c206-4d49-a8c7-02f5a22fc07b",
+        "total_score": 7.7,
+        "scores": {
+          "ask_repo_credibility": 2.0,
+          "archetype_correctness": 1.0,
+          "entrypoint_plausibility": 0.7,
+          "graph_usefulness": 1.5,
+          "execution_flow_plausibility": 2.0,
+          "pr_impact_usefulness": 0.5
+        },
+        "penalties": [
+          "Incorrectly detected archetype: cli_tool"
+        ],
+        "error": null
+      },
+      {
+        "repo_url": "https://github.com/vitejs/vite",
+        "repo_id": "267084bc-6fad-4bfd-a452-9343cd33bea8",
+        "total_score": 7.0,
+        "scores": {
+          "ask_repo_credibility": 2.0,
+          "archetype_correctness": 0.5,
+          "entrypoint_plausibility": 1.0,
+          "graph_usefulness": 1.5,
+          "execution_flow_plausibility": 1.5,
+          "pr_impact_usefulness": 0.5
+        },
+        "penalties": [],
+        "error": null
+      },
+      {
+        "repo_url": "https://github.com/dhanush-urs/airline_reservation",
+        "repo_id": "6029a638-35bb-4150-8bce-dafe3dba0f74",
+        "total_score": 8.2,
+        "scores": {
+          "ask_repo_credibility": 2.0,
+          "archetype_correctness": 1.0,
+          "entrypoint_plausibility": 0.7,
+          "graph_usefulness": 2.0,
+          "execution_flow_plausibility": 2.0,
+          "pr_impact_usefulness": 0.5
+        },
+        "penalties": [
+          "Incorrectly detected archetype: cli_tool"
+        ],
+        "error": null
+      }
+    ],
+    "summary": "Universal Benchmark: 7.6/10.0 average across 3 repos"
+  },
+  "overall_health": {
+    "overall_score": 0.905,
+    "status": "excellent",
+    "contract_pass_rate": 1.0,
+    "benchmark_score": 0.763,
+    "recommendation": "System is performing well. Ready for production deployment."
+  }
+}

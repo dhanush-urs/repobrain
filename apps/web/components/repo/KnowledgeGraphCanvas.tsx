@@ -188,7 +188,35 @@ export function KnowledgeGraphCanvas({ repoId, initialData, initialView, initial
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Edge family filter: "all" | "semantic" | "structural" | "symbol" | "api"
+  const [edgeFilter, setEdgeFilter] = useState<"all" | "semantic" | "structural" | "symbol" | "api">("all");
+  // Hide low-signal nodes toggle
+  const [hideLowSignal, setHideLowSignal] = useState(false);
+
   const W = 900, H = 600;
+
+  // Edge family classification — includes all runtime semantic edge types
+  const _SEMANTIC_ETYPES = new Set([
+    "route_to_service", "service_to_model",
+    "route_calls_service", "route_uses_schema", "route_returns_schema",
+    "service_reads_data", "service_reads_config",
+    "route_reads_data", "route_reads_config",
+    "model_returns_to_service", "repository_returns_to_service",
+    "service_returns_to_route", "route_responds_to_frontend",
+    "html_loads_script", "html_loads_style",
+  ]);
+  const _STRUCTURAL_ETYPES = new Set(["import", "from_import", "call", "require", "export"]);
+  const _SYMBOL_ETYPES = new Set(["uses_symbol"]);
+  const _API_ETYPES = new Set(["inferred_api", "html_loads_script", "html_loads_style"]);
+
+  function _edgeMatchesFilter(etype: string): boolean {
+    if (edgeFilter === "all") return true;
+    if (edgeFilter === "semantic") return _SEMANTIC_ETYPES.has(etype) || _API_ETYPES.has(etype);
+    if (edgeFilter === "structural") return _STRUCTURAL_ETYPES.has(etype);
+    if (edgeFilter === "symbol") return _SYMBOL_ETYPES.has(etype);
+    if (edgeFilter === "api") return _API_ETYPES.has(etype);
+    return true;
+  }
 
   // ── Layout ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -224,10 +252,33 @@ export function KnowledgeGraphCanvas({ repoId, initialData, initialView, initial
     return ids;
   }, [selectedNode, simEdges]);
 
+  // Filtered edges based on edge family filter
+  const filteredEdges = useMemo(() => {
+    return simEdges.filter(e => _edgeMatchesFilter(e.edge_type || e.type || ""));
+  }, [simEdges, edgeFilter]);
+
+  // Low-signal node IDs (test/generated/vendor + degree 0 with only weak edges)
+  const lowSignalNodeIds = useMemo(() => {
+    if (!hideLowSignal) return new Set<string>();
+    const connectedToSemantic = new Set<string>();
+    for (const e of simEdges) {
+      if (_SEMANTIC_ETYPES.has(e.edge_type || "") || _SYMBOL_ETYPES.has(e.edge_type || "")) {
+        connectedToSemantic.add(e.source);
+        connectedToSemantic.add(e.target);
+      }
+    }
+    return new Set(
+      simNodes
+        .filter(n => (n.is_test || n.is_generated || n.is_vendor || n.degree === 0) && !connectedToSemantic.has(n.id))
+        .map(n => n.id)
+    );
+  }, [simNodes, simEdges, hideLowSignal]);
+
   const isVisible = useCallback((n: SimNode) => {
     if (searchQuery.trim() && !searchMatches.has(n.id)) return false;
+    if (hideLowSignal && lowSignalNodeIds.has(n.id)) return false;
     return true;
-  }, [searchQuery, searchMatches]);
+  }, [searchQuery, searchMatches, hideLowSignal, lowSignalNodeIds]);
 
   // ── Pan / zoom ────────────────────────────────────────────────────────────
   const onMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -285,16 +336,17 @@ export function KnowledgeGraphCanvas({ repoId, initialData, initialView, initial
   return (
     <div className="flex flex-col gap-3">
       {/* View selector */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* View selector */}
+      <div className="flex flex-wrap items-center gap-1.5">
         {(Object.entries(VIEW_CONFIG) as [ViewMode, typeof VIEW_CONFIG[ViewMode]][]).map(([v, cfg]) => (
           <button
             key={v}
             onClick={() => switchView(v)}
             className={cn(
-              "flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-medium transition-all border",
+              "flex items-center gap-2 h-8 px-3 rounded-md text-[11px] font-semibold transition-all border",
               view === v
-                ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
-                : "border-white/5 text-slate-400 hover:text-white hover:bg-white/5"
+                ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
+                : "border-white/5 text-slate-500 hover:text-slate-300 hover:bg-white/5"
             )}
           >
             {cfg.icon}
@@ -304,18 +356,18 @@ export function KnowledgeGraphCanvas({ repoId, initialData, initialView, initial
 
         {/* Impact changed-files input */}
         {view === "impact" && (
-          <div className="flex items-center gap-2 ml-1">
+          <div className="flex items-center gap-1.5 ml-1">
             <input
               value={changedInput}
               onChange={e => setChangedInput(e.target.value)}
               placeholder="app/auth.py,app/models.py"
-              className="h-8 px-3 rounded-lg bg-slate-900 border border-white/10 text-xs text-slate-200 placeholder:text-slate-600 outline-none focus:border-indigo-500/50 w-56"
+              className="h-8 px-2.5 rounded-md bg-slate-900 border border-white/10 text-[11px] text-slate-200 placeholder:text-slate-700 outline-none focus:border-indigo-500/50 w-48 shadow-inner"
             />
             <Button
-              variant="indigo" size="sm"
+              variant="primary" size="sm"
               onClick={() => loadGraph("impact", changedInput)}
               disabled={loading}
-              className="h-8 px-3 text-xs"
+              className="h-8 px-3 text-[11px]"
             >
               Analyze
             </Button>
@@ -324,20 +376,20 @@ export function KnowledgeGraphCanvas({ repoId, initialData, initialView, initial
 
         <div className="ml-auto flex items-center gap-1">
           <button onClick={() => setTransform(t => ({ ...t, scale: Math.min(4, t.scale * 1.2) }))}
-            className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/5 text-slate-400 hover:text-white hover:bg-white/5">
-            <ZoomIn className="h-3.5 w-3.5" />
+            className="h-8 w-8 flex items-center justify-center rounded-md border border-white/5 text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors">
+            <ZoomIn size={14} />
           </button>
           <button onClick={() => setTransform(t => ({ ...t, scale: Math.max(0.12, t.scale * 0.83) }))}
-            className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/5 text-slate-400 hover:text-white hover:bg-white/5">
-            <ZoomOut className="h-3.5 w-3.5" />
+            className="h-8 w-8 flex items-center justify-center rounded-md border border-white/5 text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors">
+            <ZoomOut size={14} />
           </button>
           <button onClick={fitView}
-            className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/5 text-slate-400 hover:text-white hover:bg-white/5">
-            <Maximize2 className="h-3.5 w-3.5" />
+            className="h-8 w-8 flex items-center justify-center rounded-md border border-white/5 text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors">
+            <Maximize2 size={14} />
           </button>
           <button onClick={() => loadGraph(view, view === "impact" ? changedInput : undefined)}
-            className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/5 text-slate-400 hover:text-white hover:bg-white/5">
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            className="h-8 w-8 flex items-center justify-center rounded-md border border-white/5 text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors">
+            <RefreshCw size={14} className={cn(loading && "animate-spin")} />
           </button>
         </div>
       </div>
@@ -352,17 +404,17 @@ export function KnowledgeGraphCanvas({ repoId, initialData, initialView, initial
       {/* Stats + search strip */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Search */}
-        <div className="relative min-w-[160px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+        <div className="relative min-w-[160px] max-w-xs flex-1">
+          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
           <input
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder={view === "clusters" ? "Search clusters…" : "Search files…"}
-            className="w-full pl-9 pr-3 h-8 rounded-lg bg-slate-900 border border-white/10 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-indigo-500/50 transition-colors"
+            className="w-full pl-8 pr-8 h-8 rounded-md bg-slate-900/50 border border-white/5 text-[11px] text-slate-400 placeholder:text-slate-700 outline-none focus:border-indigo-500/30 transition-colors shadow-inner"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
-              <X className="h-3.5 w-3.5" />
+            <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+              <X size={12} />
             </button>
           )}
         </div>
@@ -379,11 +431,47 @@ export function KnowledgeGraphCanvas({ repoId, initialData, initialView, initial
             <Info className="h-3 w-3" /> top {graphData.nodes.length} shown
           </span>
         )}
+        {graphData.graph_stats?.sparse && graphData.nodes.length > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-slate-600/30 bg-slate-600/5 px-2.5 py-1 text-[10px] text-slate-500">
+            <Info className="h-3 w-3" /> sparse graph — re-index to improve
+          </span>
+        )}
         {view === "impact" && changedInput && (
           <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/20 bg-rose-500/5 px-2.5 py-1 text-[10px] text-rose-400/80 max-w-[200px] truncate">
             {changedInput.split(",").filter(Boolean).length} changed file(s)
           </span>
         )}
+      </div>
+
+      {/* Edge family filters + low-signal toggle — compact, non-intrusive */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold">Filter Edges:</span>
+        {(["all", "semantic", "structural", "symbol", "api"] as const).map(f => (
+          <button
+            key={f}
+            onClick={() => setEdgeFilter(f)}
+            className={cn(
+              "h-6 px-2 rounded-md text-[10px] font-medium transition-colors border",
+              edgeFilter === f
+                ? "bg-indigo-500/20 border-indigo-500/30 text-indigo-400"
+                : "border-white/5 text-slate-600 hover:text-slate-400 hover:bg-white/5"
+            )}
+          >
+            {f === "all" ? "All" : f === "semantic" ? "Flow" : f === "structural" ? "Imports" : f === "symbol" ? "Symbols" : "API"}
+          </button>
+        ))}
+        <span className="text-slate-800 mx-1">·</span>
+        <button
+          onClick={() => setHideLowSignal(v => !v)}
+          className={cn(
+            "h-6 px-2 rounded-md text-[10px] font-semibold transition-colors border",
+            hideLowSignal
+              ? "bg-slate-500/10 border-slate-500/20 text-slate-400"
+              : "border-white/5 text-slate-600 hover:text-slate-400 hover:bg-white/5"
+          )}
+        >
+          {hideLowSignal ? "Core Graph Only" : "Hide Low Signal"}
+        </button>
       </div>
 
       <div className="flex gap-4 items-start animate-in fade-in duration-500">
@@ -447,8 +535,8 @@ export function KnowledgeGraphCanvas({ repoId, initialData, initialView, initial
               </defs>
 
               <g transform={`translate(${transform.x},${transform.y}) scale(${transform.scale})`}>
-                {/* Edges */}
-                {layoutDone && simEdges.map(edge => {
+                {/* Edges — filtered by edge family */}
+                {layoutDone && filteredEdges.map(edge => {
                   const s = edge.sourceNode, t = edge.targetNode;
                   if (!s || !t) return null;
                   if (!isVisible(s) || !isVisible(t)) return null;
@@ -615,47 +703,109 @@ function NodePanel({
   const incoming = edges.filter(e => e.target === node.id);
   const color = nodeColor(node, view);
 
-  const topNeighbors = [
-    ...incoming.map(e => ({ n: nm.get(e.source), dir: "in" as const })),
-    ...outgoing.map(e => ({ n: nm.get(e.target), dir: "out" as const })),
-  ].filter(x => x.n).slice(0, 5);
+  // Group neighbors by semantic edge type
+  const _SEMANTIC_EDGE_LABELS: Record<string, string> = {
+    route_to_service: "calls service",
+    service_to_model: "uses model",
+    uses_symbol: "uses symbol",
+    inferred_api: "frontend → API",
+    import: "imports",
+    from_import: "imports",
+    require: "imports",
+    call: "calls",
+    export: "exports",
+    inferred: "inferred",
+    inferred_naming: "inferred",
+  };
+
+  // Build grouped neighbor list
+  const allNeighbors = [
+    ...incoming.map(e => ({ n: nm.get(e.source), dir: "in" as const, edge: e })),
+    ...outgoing.map(e => ({ n: nm.get(e.target), dir: "out" as const, edge: e })),
+  ].filter(x => x.n);
+
+  // Group by semantic meaning
+  const semanticGroups: Record<string, typeof allNeighbors> = {};
+  for (const item of allNeighbors) {
+    const et = item.edge?.edge_type || "import";
+    const label = _SEMANTIC_EDGE_LABELS[et] || et;
+    const groupKey = item.dir === "in" ? `← ${label}` : `→ ${label}`;
+    if (!semanticGroups[groupKey]) semanticGroups[groupKey] = [];
+    semanticGroups[groupKey].push(item);
+  }
+
+  // Determine file role from path
+  const _ROLE_COLORS: Record<string, string> = {
+    route: "#6366f1", service: "#8b5cf6", model: "#10b981",
+    repository: "#06b6d4", frontend: "#f59e0b", config: "#64748b",
+    integration: "#ec4899", test: "#94a3b8", worker: "#f97316",
+    middleware: "#f59e0b", entrypoint: "#ef4444",
+  };
+  const _ROLE_LABELS: Record<string, string> = {
+    route: "Route", service: "Service", model: "Model",
+    repository: "Repository", frontend: "Frontend", config: "Config",
+    integration: "Integration", test: "Test", worker: "Worker",
+    middleware: "Middleware", entrypoint: "Entrypoint",
+  };
+  function _inferRole(path: string): string | null {
+    const p = path.toLowerCase();
+    if (/\/(route|router|routes|controller|handler|endpoint|view|api)/.test(p)) return "route";
+    if (/\/(service|services|usecase|manager)/.test(p)) return "service";
+    if (/\/(model|models|schema|schemas|entity|entities|orm)/.test(p)) return "model";
+    if (/\/(repo|repository|dao|store|crud|db|database)/.test(p)) return "repository";
+    if (/\/(frontend|client|ui|web|pages|components|views|scripts)/.test(p)) return "frontend";
+    if (/\/(config|settings|configuration|env|constants)/.test(p)) return "config";
+    if (/\/(test|tests|spec|specs)/.test(p)) return "test";
+    if (/\/(worker|task|job|queue|celery|background)/.test(p)) return "worker";
+    if (/\/(middleware|interceptor|guard|auth)/.test(p)) return "middleware";
+    const stem = path.split("/").pop()?.split(".")[0]?.toLowerCase() || "";
+    if (["app", "main", "server", "index", "manage", "wsgi", "asgi"].includes(stem)) return "entrypoint";
+    return null;
+  }
+  const fileRole = node.type === "file" ? _inferRole(node.path) : null;
 
   return (
-    <div className="rounded-xl border border-white/5 bg-slate-900/60 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+    <div className="rounded-lg border border-border/40 bg-slate-900/60 overflow-hidden shadow-premium">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5 bg-white/[0.02]">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="h-2.5 w-2.5 rounded shrink-0" style={{ backgroundColor: color }} />
-          <span className="text-xs font-semibold text-white truncate">{node.label}</span>
+          <div className="h-2 w-2 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+          <span className="text-[11px] font-bold text-slate-200 truncate">{node.label}</span>
+          {fileRole && (
+            <span className="shrink-0 rounded border px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+              style={{ color: _ROLE_COLORS[fileRole] || "#64748b", borderColor: (_ROLE_COLORS[fileRole] || "#64748b") + "33", backgroundColor: (_ROLE_COLORS[fileRole] || "#64748b") + "11" }}>
+              {_ROLE_LABELS[fileRole] || fileRole}
+            </span>
+          )}
         </div>
-        <button onClick={onClose} className="text-slate-500 hover:text-white ml-2 shrink-0">
-          <X className="h-3.5 w-3.5" />
+        <button onClick={onClose} className="text-slate-600 hover:text-slate-400 ml-2 shrink-0 transition-colors">
+          <X size={14} />
         </button>
       </div>
 
-      <div className="p-4 space-y-3">
+      <div className="p-3.5 space-y-3.5">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">
             {node.type === "cluster" ? "Cluster" : "File"}
           </div>
-          <div className="text-xs text-slate-300 font-mono break-all">{node.path}</div>
+          <div className="text-[11px] text-slate-400 font-mono break-all leading-relaxed opacity-80">{node.path}</div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           {node.type === "cluster" && (
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-0.5">Files</div>
-              <div className="text-xs text-slate-300">{node.meta.file_count}</div>
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Files</div>
+              <div className="text-[11px] text-slate-300 font-medium">{node.meta.file_count}</div>
             </div>
           )}
           {node.type === "file" && (
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-0.5">Lines</div>
-              <div className="text-xs text-slate-300">{node.line_count || "—"}</div>
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Lines</div>
+              <div className="text-[11px] text-slate-300 font-medium">{node.line_count || "—"}</div>
             </div>
           )}
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-0.5">Degree</div>
-            <div className="text-xs text-slate-300">{node.degree}</div>
+            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Degree</div>
+            <div className="text-[11px] text-slate-300 font-medium">{node.degree}</div>
           </div>
           {view === "hotspots" && (
             <div>
@@ -684,30 +834,26 @@ function NodePanel({
           <span className="flex items-center gap-1"><ArrowUpRight className="h-3 w-3 text-cyan-400" />{outgoing.length} out</span>
         </div>
 
-        {topNeighbors.length > 0 && (
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Connected</div>
-            <div className="space-y-1">
-              {topNeighbors.map(({ n, dir }, i) => {
-                const edge = dir === "in"
-                  ? edges.find(e => e.source === n?.id && e.target === node.id)
-                  : edges.find(e => e.source === node.id && e.target === n?.id);
-                const isInferred = edge?.meta?.is_inferred === true
-                  || edge?.edge_type === "inferred"
-                  || edge?.edge_type === "inferred_naming";
-                return n && (
-                  <button key={i} onClick={() => onSelect(n)}
-                    className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 text-left group">
-                    <div className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: nodeColor(n, view) }} />
-                    <span className="text-xs text-slate-400 group-hover:text-white truncate flex-1 font-mono">{n.label}</span>
-                    {isInferred && (
-                      <span className="text-[9px] text-slate-600 shrink-0" title="Inferred edge">~</span>
-                    )}
-                    <span className="text-[9px] text-slate-600">{dir === "in" ? "←" : "→"}</span>
-                  </button>
-                );
-              })}
-            </div>
+        {/* Grouped neighbors by semantic edge type */}
+        {Object.keys(semanticGroups).length > 0 && (
+          <div className="space-y-2">
+            {Object.entries(semanticGroups).slice(0, 4).map(([groupLabel, items]) => (
+              <div key={groupLabel}>
+                <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-600 mb-1">{groupLabel}</div>
+                <div className="space-y-0.5">
+                  {items.slice(0, 3).map(({ n, dir, edge }, i) => n && (
+                    <button key={i} onClick={() => onSelect(n)}
+                      className="w-full flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-white/5 text-left group">
+                      <div className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: nodeColor(n, view) }} />
+                      <span className="text-xs text-slate-400 group-hover:text-white truncate flex-1 font-mono">{n.label}</span>
+                      {(edge?.meta?.is_inferred || edge?.edge_type === "inferred" || edge?.edge_type === "inferred_naming") && (
+                        <span className="text-[9px] text-slate-600 shrink-0" title="Inferred edge">~</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

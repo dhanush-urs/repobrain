@@ -168,6 +168,15 @@ class SemanticService:
 
         # Step 3: Resolve Dependency Graph
         resolved = self.graph_service.resolve_repository_dependencies(repository.id)
+
+        # Step 4: Enrich with semantic edges (route→service, service→model, uses_symbol, inferred_api)
+        try:
+            from app.services.graph_service import enrich_repository_edges
+            enrichment_counts = enrich_repository_edges(self.db, repository.id)
+            logger.info(f"[SemanticService] Semantic edge enrichment: {enrichment_counts}")
+        except Exception as _enrich_err:
+            logger.warning(f"[SemanticService] Semantic edge enrichment failed (non-fatal): {_enrich_err}")
+            enrichment_counts = {}
         
         return {
             "parsed_files": parsed_files,
@@ -176,6 +185,7 @@ class SemanticService:
             "total_symbols": total_symbols,
             "total_dependencies": total_dependencies,
             "resolved_dependencies": resolved,
+            "enriched_edges": enrichment_counts,
         }
 
     def enrich_repository(self, repository: Repository) -> dict:

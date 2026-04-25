@@ -98,6 +98,42 @@ export type AskRepoResponse = {
   answer_mode?: string | null;
   notes?: string[] | null;
   snippet_found?: boolean | null;
+  // New: answer confidence and evidence breakdown
+  answer_confidence?: "high" | "medium" | "low" | null;
+  evidence_breakdown?: {
+    exact_edges_used: number;
+    inferred_edges_used: number;
+    symbol_hits_used: number;
+    semantic_hits_used: number;
+    total_chunks: number;
+  } | null;
+  // New: structured answer for analyst console UI
+  structured_answer?: {
+    summary?: string;
+    sections?: Array<{
+      key: string;
+      title: string;
+      kind: "summary" | "stack" | "architecture" | "capabilities" | "flow" | "files" | "risks" | "notes" | "symbol" | "usage" | "impact" | "evidence";
+      content: string;
+      priority: number;
+      collapsible?: boolean;
+      default_open?: boolean;
+    }>;
+    key_files?: Array<{
+      path: string;
+      reason?: string;
+      role?: string | null;
+    }>;
+    evidence_preview?: Array<{
+      file_path: string;
+      line_start?: number | null;
+      line_end?: number | null;
+      label?: string;
+      snippet?: string;
+      match_type?: string | null;
+    }>;
+    answer_mode?: "high_level" | "flow" | "symbol" | "impact" | "code" | "fallback";
+  } | null;
 };
 
 export type HotspotItem = {
@@ -159,6 +195,8 @@ export type PRImpactResponse = {
     primary_category: string;
     symbol_hits: string[];
     why_now: string;
+    reason_tag?: string;
+    evidence_strength?: string;
   }>;
   reviewer_suggestions: Array<{
     reviewer_hint: string;
@@ -217,6 +255,19 @@ export type PRImpactResponse = {
   executive_summary?: string;
   partial_failure?: boolean;
   partial_failure_reasons?: string[];
+  impact_confidence?: string;
+  evidence_breakdown?: {
+    exact_edges_used: number;
+    inferred_edges_used: number;
+    flow_links_used: number;
+    symbol_links_used: number;
+    semantic_only_hits: number;
+    total_impacted: number;
+  };
+  // New: change classification and score explanation
+  change_types?: string[];
+  is_trivial_change?: boolean;
+  score_explanation?: string;
 };
 
 export type RefreshJob = {
@@ -334,6 +385,16 @@ export type KnowledgeGraphData = {
   total_resolved_edges: number;
   total_inferred_edges?: number;
   truncated: boolean;
+  graph_stats?: {
+    node_count: number;
+    edge_count: number;
+    resolved_edge_count: number;
+    inferred_edge_count: number;
+    isolated_node_count?: number;
+    disconnected_clusters?: number;
+    density: number;
+    sparse: boolean;
+  };
 };
 
 // ---------------------------------------------------------------------------

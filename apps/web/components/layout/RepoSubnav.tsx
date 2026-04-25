@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -33,8 +34,8 @@ export function RepoSubnav({ repoId }: Props) {
   ];
 
   return (
-    <div className="mb-8 overflow-x-auto">
-      <nav className="flex items-center gap-1 border-b border-border min-w-max">
+    <div className="mb-4 overflow-x-auto">
+      <nav className="flex items-center gap-1 border-b border-white/5 min-w-max px-1">
         {navItems.map((item) => {
           const isActive = pathname === item.href || (item.label !== "Overview" && pathname.startsWith(item.href));
           return (
@@ -42,16 +43,18 @@ export function RepoSubnav({ repoId }: Props) {
               key={item.href}
               href={item.href}
               className={cn(
-                "group relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all duration-200",
+                "group relative flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all duration-200",
                 isActive
-                  ? "text-indigo-400"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "text-slate-100"
+                  : "text-slate-600 hover:text-slate-300"
               )}
             >
-              {item.icon}
+              <span className={cn("transition-colors", isActive ? "text-indigo-400" : "text-slate-700 group-hover:text-slate-500")}>
+                {React.cloneElement(item.icon as React.ReactElement, { size: 13 })}
+              </span>
               {item.label}
               {isActive && (
-                <div className="absolute bottom-0 left-0 h-0.5 w-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
+                <div className="absolute bottom-0 left-0 h-0.5 w-full bg-indigo-500 shadow-[0_-4px_8px_rgba(99,102,241,0.2)]" />
               )}
             </Link>
           );

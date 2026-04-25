@@ -1,0 +1,72 @@
+{
+  "timestamp": 1777040796.3653219,
+  "version": "10.0",
+  "test_type": "contracts",
+  "health_summary": {
+    "contracts_total": 8,
+    "contracts_passed": 8,
+    "contracts_failed": 0,
+    "contracts_skipped": 0,
+    "pass_rate": 1.0
+  },
+  "test_results": [
+    {
+      "test_name": "api_root_responds",
+      "passed": true,
+      "error": null,
+      "duration_ms": 18,
+      "details": {}
+    },
+    {
+      "test_name": "health_endpoint_responds",
+      "passed": true,
+      "error": null,
+      "duration_ms": 2,
+      "details": {}
+    },
+    {
+      "test_name": "repo_creation_contract",
+      "passed": true,
+      "error": null,
+      "duration_ms": 41,
+      "details": {}
+    },
+    {
+      "test_name": "repo_listing_contract",
+      "passed": true,
+      "error": null,
+      "duration_ms": 15,
+      "details": {}
+    },
+    {
+      "test_name": "repo_detail_contract",
+      "passed": true,
+      "error": null,
+      "duration_ms": 5,
+      "details": {}
+    },
+    {
+      "test_name": "api_requests_timeout_properly",
+      "passed": true,
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "null_file_id_regression",
+      "passed": true,
+      "error": "Regression test placeholder",
+      "duration_ms": null,
+      "details": {}
+    },
+    {
+      "test_name": "graph_empty_500_regression",
+      "passed": true,
+      "error": null,
+      "duration_ms": null,
+      "details": {}
+    }
+  ],
+  "failed_tests": [],
+  "summary": "Contract Tests: 8/8 passed"
+}

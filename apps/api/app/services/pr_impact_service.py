@@ -124,6 +124,202 @@ def _extract_changed_symbols(diff_text: str) -> list[str]:
     return symbols[:20]  # cap to avoid noise
 
 
+
+# ---------------------------------------------------------------------------
+# Diff change-type classifier — generic, language-agnostic
+# ---------------------------------------------------------------------------
+# Classifies what KIND of change a diff represents, enabling realistic
+# severity calibration. Low-signal changes get penalized; high-signal
+# changes (route/schema/auth/public API) get boosted.
+# ---------------------------------------------------------------------------
+
+# Patterns for low-severity change detection
+_WHITESPACE_ONLY_RE = re.compile(r"^[+-]\s*$", re.MULTILINE)
+_COMMENT_LINE_RE = re.compile(r"^[+-]\s*(?:#|//|/\*|\*|\"\"\"|\'\'\').*$", re.MULTILINE)
+_IMPORT_LINE_RE = re.compile(r"^[+-]\s*(?:import|from\s+\S+\s+import|require\s*\(|#include)", re.MULTILINE)
+_LOGGING_LINE_RE = re.compile(r"^[+-]\s*(?:logger\.|logging\.|console\.|print\s*\(|log\s*\()", re.MULTILINE)
+_DOCSTRING_RE = re.compile(r'^[+-]\s*(?:"""|\'\'\').*?(?:"""|\'\'\')$', re.MULTILINE | re.DOTALL)
+
+# Patterns for high-severity change detection
+_ROUTE_DECORATOR_RE = re.compile(
+    r"^[+-]\s*@(?:app|router|blueprint|api)\.(get|post|put|delete|patch|options|head)\s*\(",
+    re.MULTILINE | re.IGNORECASE,
+)
+_ROUTE_PATH_RE = re.compile(
+    r"^[+-]\s*(?:path|re_path|url)\s*\(\s*['\"]([^'\"]+)['\"]",
+    re.MULTILINE | re.IGNORECASE,
+)
+_PUBLIC_FUNC_RE = re.compile(
+    r"^[+-]\s*(?:async\s+)?def\s+(?!_)(\w+)\s*\(",
+    re.MULTILINE,
+)
+_PUBLIC_CLASS_RE = re.compile(
+    r"^[+-]\s*class\s+(\w+)\s*[:(]",
+    re.MULTILINE,
+)
+_SCHEMA_FIELD_RE = re.compile(
+    r"^[+-]\s*\w+\s*[:=]\s*(?:Field|Column|models\.|db\.Column|Mapped\[)",
+    re.MULTILINE,
+)
+_AUTH_PATTERN_RE = re.compile(
+    r"^[+-].*(?:password|token|secret|auth|permission|role|credential|jwt|oauth|session)",
+    re.MULTILINE | re.IGNORECASE,
+)
+_CONFIG_PATTERN_RE = re.compile(
+    r"^[+-]\s*[A-Z][A-Z0-9_]{2,}\s*=",
+    re.MULTILINE,
+)
+
+
+def _classify_diff_change_types(diff: str | None, changed_paths: list[str]) -> dict:
+    """
+    Classify the change types present in a diff.
+
+    Returns a dict with:
+    - change_types: list of detected change type strings
+    - severity_modifier: float (-1.0 to +1.0) to adjust base risk score
+    - is_trivial: bool — true if all changes are low-signal
+    - explanation: human-readable summary of what was detected
+
+    Never raises — returns safe defaults on failure.
+    """
+    result = {
+        "change_types": [],
+        "severity_modifier": 0.0,
+        "is_trivial": False,
+        "explanation": "",
+    }
+
+    if not diff:
+        # File-list only — classify by path patterns
+        change_types = []
+        for path in changed_paths:
+            p = path.lower()
+            if any(t in p for t in ("test", "spec", "fixture", "mock")):
+                change_types.append("test_only")
+            elif any(t in p for t in ("readme", "changelog", "docs", ".md", ".rst", ".txt")):
+                change_types.append("docs_only")
+        if change_types and all(ct in ("test_only", "docs_only") for ct in change_types):
+            result["change_types"] = list(set(change_types))
+            result["severity_modifier"] = -0.3
+            result["is_trivial"] = True
+            result["explanation"] = "Only test/documentation files changed."
+        return result
+
+    try:
+        # Extract only the changed lines (+ and - lines, not context)
+        changed_lines = [l for l in diff.splitlines() if l.startswith(("+", "-")) and not l.startswith(("+++", "---"))]
+        changed_text = "\n".join(changed_lines)
+
+        if not changed_text.strip():
+            result["is_trivial"] = True
+            result["explanation"] = "No meaningful content changes detected."
+            return result
+
+        change_types: list[str] = []
+        severity_mod = 0.0
+
+        # ── Low-severity signals ──────────────────────────────────────────────
+        non_ws_lines = [l for l in changed_lines if l[1:].strip()]
+        ws_only = len(non_ws_lines) == 0
+        if ws_only:
+            change_types.append("whitespace_only")
+            severity_mod -= 0.5
+
+        comment_lines = len(_COMMENT_LINE_RE.findall(changed_text))
+        import_lines = len(_IMPORT_LINE_RE.findall(changed_text))
+        logging_lines = len(_LOGGING_LINE_RE.findall(changed_text))
+        total_changed = max(1, len(non_ws_lines))
+
+        if comment_lines / total_changed >= 0.8:
+            change_types.append("comment_only")
+            severity_mod -= 0.4
+        elif comment_lines / total_changed >= 0.5:
+            change_types.append("mostly_comments")
+            severity_mod -= 0.2
+
+        if import_lines > 0 and import_lines / total_changed >= 0.7:
+            change_types.append("import_only")
+            severity_mod -= 0.25
+
+        if logging_lines > 0 and logging_lines / total_changed >= 0.6:
+            change_types.append("logging_only")
+            severity_mod -= 0.2
+
+        # ── High-severity signals ─────────────────────────────────────────────
+        route_decorators = _ROUTE_DECORATOR_RE.findall(changed_text)
+        if route_decorators:
+            change_types.append("route_signature_change")
+            severity_mod += 0.35
+
+        route_paths = _ROUTE_PATH_RE.findall(changed_text)
+        if route_paths:
+            change_types.append("route_path_change")
+            severity_mod += 0.30
+
+        public_funcs = _PUBLIC_FUNC_RE.findall(changed_text)
+        if public_funcs:
+            change_types.append("public_function_signature_change")
+            severity_mod += 0.20
+
+        public_classes = _PUBLIC_CLASS_RE.findall(changed_text)
+        if public_classes:
+            change_types.append("public_class_change")
+            severity_mod += 0.15
+
+        schema_fields = _SCHEMA_FIELD_RE.findall(changed_text)
+        if schema_fields:
+            change_types.append("schema_change")
+            severity_mod += 0.30
+
+        auth_patterns = _AUTH_PATTERN_RE.findall(changed_text)
+        if auth_patterns:
+            change_types.append("auth_security_change")
+            severity_mod += 0.40
+
+        config_constants = _CONFIG_PATTERN_RE.findall(changed_text)
+        if config_constants:
+            change_types.append("config_runtime_change")
+            severity_mod += 0.25
+
+        # ── Path-based signals ────────────────────────────────────────────────
+        for path in changed_paths:
+            p = path.lower()
+            if any(t in p for t in ("test", "spec", "fixture", "mock")):
+                if "test_only" not in change_types:
+                    change_types.append("test_only")
+                    severity_mod -= 0.20
+
+        # ── Determine if trivial ──────────────────────────────────────────────
+        low_signal = {"whitespace_only", "comment_only", "mostly_comments", "import_only", "logging_only", "test_only", "docs_only"}
+        high_signal = {"route_signature_change", "route_path_change", "schema_change", "auth_security_change", "public_function_signature_change"}
+        has_high = bool(set(change_types) & high_signal)
+        all_low = bool(change_types) and not has_high and all(ct in low_signal for ct in change_types)
+        is_trivial = all_low and not has_high
+
+        # Build explanation
+        if not change_types:
+            change_types.append("generic_logic_change")
+            explanation = "General code changes detected."
+        elif is_trivial:
+            explanation = f"Low-signal changes: {', '.join(change_types)}."
+        elif has_high:
+            high_found = [ct for ct in change_types if ct in high_signal]
+            explanation = f"High-impact changes detected: {', '.join(high_found)}."
+        else:
+            explanation = f"Mixed changes: {', '.join(change_types[:3])}."
+
+        result["change_types"] = list(dict.fromkeys(change_types))  # deduplicate preserving order
+        result["severity_modifier"] = round(max(-0.6, min(0.6, severity_mod)), 2)
+        result["is_trivial"] = is_trivial
+        result["explanation"] = explanation
+
+    except Exception as e:
+        logger.debug(f"_classify_diff_change_types failed: {e}")
+
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Impact category classifier — generic file role heuristics
 # ---------------------------------------------------------------------------
@@ -376,6 +572,13 @@ class PRImpactService:
             except Exception:
                 pass  # never fail on symbol extraction
 
+        # ── Step 1b: classify change types for severity calibration ──────────
+        change_classification = _classify_diff_change_types(diff, all_changed)
+        change_types = change_classification.get("change_types", [])
+        severity_modifier = change_classification.get("severity_modifier", 0.0)
+        is_trivial_change = change_classification.get("is_trivial", False)
+        change_explanation = change_classification.get("explanation", "")
+
         if not all_changed:
             return {
                 "repository_id": repository_id,
@@ -388,6 +591,7 @@ class PRImpactService:
                 "impacted_files": [],
                 "reviewer_suggestions": [],
                 "notes": pipeline_notes,
+                "score_explanation": "No files to analyze; provide changed file paths or diff.",
             }
 
         # ── Step 2: load repo files (no content — not needed for impact scoring) ──
@@ -445,6 +649,7 @@ class PRImpactService:
                 "impacted_files": [],
                 "reviewer_suggestions": [],
                 "notes": pipeline_notes,
+                "score_explanation": "Changed files not found in indexed repository; unable to analyze impact.",
             }
 
         # ── Step 4: load dependency edges ────────────────────────────────────
@@ -476,10 +681,52 @@ class PRImpactService:
             if edge.edge_type not in edge_type_map[key]:
                 edge_type_map[key].append(edge.edge_type)
 
+        # ── Inferred edge fallback (sparse graph) ────────────────────────────
+        # If no resolved edges exist, use the same inferred edge layer that
+        # powers Knowledge Graph and Execution Map. This keeps PR Impact
+        # consistent with the rest of the product.
+        _used_inferred_edges = False
         if not edges:
+            try:
+                from app.services.graph_service import compute_inferred_edges
+                all_file_rows = list(self.db.execute(
+                    select(
+                        File.id, File.path, File.language, File.file_kind,
+                        File.line_count, File.is_generated, File.is_vendor, File.is_test,
+                    ).where(File.repository_id == repository_id)
+                ).all())
+                inferred = compute_inferred_edges(
+                    db=self.db,
+                    repository_id=repository_id,
+                    resolved_edges=[],
+                    all_files=all_file_rows,
+                    sparsity_threshold=1.0,  # always run when no resolved edges
+                    max_inferred=300,
+                )
+                if inferred:
+                    file_id_set = set(file_ids)
+                    for src, tgt, etype in inferred:
+                        if src not in file_id_set or tgt not in file_id_set:
+                            continue
+                        reverse_adj.setdefault(tgt, set()).add(src)
+                        forward_adj.setdefault(src, set()).add(tgt)
+                        key = (src, tgt)
+                        edge_type_map.setdefault(key, [])
+                        if etype not in edge_type_map[key]:
+                            edge_type_map[key].append(etype)
+                    _used_inferred_edges = bool(inferred)
+            except Exception:
+                pass  # always degrade gracefully
+
+        if not edges and not _used_inferred_edges:
             pipeline_notes.append(
                 "No resolved dependency edges found. Graph expansion unavailable. "
                 "Re-index the repository to populate file relationships."
+            )
+        elif _used_inferred_edges:
+            pipeline_notes.append(
+                "Used inferred dependency relationships due to sparse persisted graph. "
+                "Impact expansion confidence is lower than with persisted dependency edges."
             )
 
         inbound_counts = {fid: len(reverse_adj.get(fid, set())) for fid in file_map}
@@ -589,6 +836,12 @@ class PRImpactService:
             impact_level = classify_impact_level(impact_score)
             reasons = visited_reasons.get(file_id, [])
             etypes = list(visited_edge_types.get(file_id, set()))
+            etypes_set = visited_edge_types.get(file_id, set())
+            is_direct = file_id in changed_ids
+
+            # Reason tag and evidence strength from edge types
+            reason_tag = _reason_tag_from_edge_types(etypes_set, is_direct)
+            evidence_strength = _evidence_strength_from_edge_types(etypes_set) if not is_direct else "high"
 
             impacted_files.append({
                 "file_id": file_id,
@@ -602,15 +855,28 @@ class PRImpactService:
                 "impact_level": impact_level,
                 "reasons": reasons,
                 "edge_types": etypes,
-                "is_directly_changed": file_id in changed_ids,
+                "is_directly_changed": is_direct,
                 "categories": categories,
                 "primary_category": primary_category,
                 "symbol_hits": symbol_hits[:5],
+                "reason_tag": reason_tag,
+                "evidence_strength": evidence_strength,
             })
 
         impacted_files.sort(key=lambda x: (-x["impact_score"], x["depth"]))
 
         total_impact_score = compute_total_impact_score([f["impact_score"] for f in impacted_files])
+
+        # Apply severity modifier from change-type classification
+        # Trivial changes (whitespace/comment/import-only) get capped
+        if is_trivial_change and total_impact_score > 40.0:
+            total_impact_score = min(total_impact_score, 40.0)
+            pipeline_notes.append(f"Score capped: {change_explanation}")
+        elif severity_modifier != 0.0:
+            # Apply modifier proportionally (not additively) to avoid inflation
+            adjusted = total_impact_score * (1.0 + severity_modifier)
+            total_impact_score = round(max(0.0, min(100.0, adjusted)), 2)
+
         risk_level = classify_impact_level(total_impact_score)
 
         # ── Step 6b: build smart review order ────────────────────────────────
@@ -706,7 +972,8 @@ class PRImpactService:
                 impacted_files=review_ordered,
                 total_impact_score=total_impact_score,
                 risk_level=risk_level,
-                has_graph=bool(edges),
+                has_graph=bool(edges) or _used_inferred_edges,
+                used_inferred=_used_inferred_edges,
                 flow_paths=flow_paths,
                 changed_symbols=changed_symbols,
             )
@@ -731,9 +998,42 @@ class PRImpactService:
             outbound_counts=outbound_counts,
             changed_ids=changed_ids,
             pipeline_notes=pipeline_notes,
+            used_inferred_edges=_used_inferred_edges,
         )
         # executive_summary mirrors the main summary
         enriched["executive_summary"] = summary
+
+        # Build score explanation from real scoring components
+        score_explanation_parts: list[str] = []
+        if change_explanation:
+            score_explanation_parts.append(change_explanation)
+        if is_trivial_change:
+            score_explanation_parts.append("Score reduced: low-signal change type.")
+        if enriched.get("risk_assessment", {}).get("risk_reasons"):
+            top_reason = enriched["risk_assessment"]["risk_reasons"][0]
+            score_explanation_parts.append(f"Risk elevated: {top_reason}")
+        if not edges:
+            score_explanation_parts.append("Confidence limited: no dependency graph available.")
+        
+        # Ensure score_explanation is always non-empty for successful responses
+        if score_explanation_parts:
+            enriched["score_explanation"] = " ".join(score_explanation_parts[:3])
+        else:
+            # Fallback explanation when no specific scoring components are available
+            if is_trivial_change:
+                enriched["score_explanation"] = "Low-signal change detected (e.g. whitespace/comments/import-only), score capped."
+            elif len(all_changed) == 1 and any(ext in all_changed[0].lower() for ext in ['.md', '.txt', '.rst']):
+                enriched["score_explanation"] = "Documentation-only change detected, minimal impact expected."
+            elif not edges and len(all_changed) <= 2:
+                enriched["score_explanation"] = "Limited evidence: sparse dependency graph, score based on changed file type and direct references."
+            else:
+                enriched["score_explanation"] = "Score based on graph expansion and category analysis."
+        enriched["change_types"] = change_types
+        enriched["is_trivial_change"] = is_trivial_change
+
+        # Final safety net: ensure score_explanation is always present in successful responses
+        if "score_explanation" not in enriched or not enriched["score_explanation"] or not enriched["score_explanation"].strip():
+            enriched["score_explanation"] = "Score based on direct file changes and dependency graph expansion."
 
         return {
             "repository_id": repository_id,
@@ -764,6 +1064,7 @@ class PRImpactService:
             "impacted_files": [],
             "reviewer_suggestions": [],
             "notes": notes,
+            "score_explanation": "Repository has no indexed files; unable to perform impact analysis.",
             # New enriched sections — empty defaults
             "input_extraction": {"changed_files": changed_files, "changed_symbols": [], "added_lines": 0, "removed_lines": 0, "analysis_source": "file_list"},
             "blast_radius": {"direct_dependents_count": 0, "upstream_dependencies_count": 0, "total_blast_radius_count": 0, "impacted_modules": []},
@@ -791,6 +1092,25 @@ def _reason_from_edge(
     related = file_map.get(related_file_id)
     related_name = related.path.split("/")[-1] if related else "changed file"
     primary = edge_types[0] if edge_types else "import"
+
+    # Semantic edge types get descriptive reasons
+    if "route_to_service" in edge_types:
+        if direction == "inbound":
+            return f"route handler calls this service (via {related_name})"
+        return f"this route calls service {related_name}"
+    if "service_to_model" in edge_types:
+        if direction == "inbound":
+            return f"service uses this model/schema (via {related_name})"
+        return f"this service uses model {related_name}"
+    if "uses_symbol" in edge_types:
+        if direction == "inbound":
+            return f"uses changed symbol from {related_name}"
+        return f"symbol used in {related_name}"
+    if "inferred_api" in edge_types:
+        if direction == "inbound":
+            return f"frontend calls this backend route (via {related_name})"
+        return f"this frontend calls backend {related_name}"
+
     if direction == "inbound":
         if primary in ("import", "from_import", "require"):
             return f"imports {related_name}"
@@ -805,12 +1125,43 @@ def _reason_from_edge(
         return f"dependency of {related_name}"
 
 
+def _evidence_strength_from_edge_types(edge_types: set[str]) -> str:
+    """Return evidence strength based on edge types present."""
+    if any(et in edge_types for et in ("route_to_service", "service_to_model", "uses_symbol")):
+        return "high"
+    if any(et in edge_types for et in ("import", "from_import", "call", "require")):
+        return "medium"
+    if any(et in edge_types for et in ("inferred_api", "inferred", "inferred_naming")):
+        return "low"
+    return "medium"
+
+
+def _reason_tag_from_edge_types(edge_types: set[str], is_directly_changed: bool) -> str:
+    """Return a reason tag for the impacted file."""
+    if is_directly_changed:
+        return "direct_change"
+    if "route_to_service" in edge_types:
+        return "route_calls_changed_service"
+    if "service_to_model" in edge_types:
+        return "service_uses_changed_model"
+    if "uses_symbol" in edge_types:
+        return "changed_symbol_used_here"
+    if "inferred_api" in edge_types:
+        return "frontend_calls_changed_route"
+    if any(et in edge_types for et in ("import", "from_import", "require")):
+        return "imports_changed_code"
+    if any(et in edge_types for et in ("inferred", "inferred_naming")):
+        return "same_execution_path"
+    return "semantic_reference_only"
+
+
 def _build_fallback_summary(
     changed_files: list[str],
     impacted_files: list[dict],
     total_impact_score: float,
     risk_level: str,
     has_graph: bool,
+    used_inferred: bool = False,
     flow_paths: list[dict] | None = None,
     changed_symbols: list[str] | None = None,
 ) -> str:
@@ -848,6 +1199,11 @@ def _build_fallback_summary(
         parts.append(
             "No resolved dependency edges are available — graph expansion was skipped. "
             "Re-index the repository to enable relationship-aware impact analysis."
+        )
+    elif used_inferred:
+        parts.append(
+            "Impact expansion used inferred file relationships; "
+            "confidence is lower than with persisted dependency edges."
         )
 
     # Risk level
@@ -964,6 +1320,7 @@ def _build_enriched_sections(
     outbound_counts: dict[str, int],
     changed_ids: set[str],
     pipeline_notes: list[str],
+    used_inferred_edges: bool = False,
 ) -> dict:
     """
     Build the 8 new enriched sections from existing pipeline data.
@@ -1040,7 +1397,7 @@ def _build_enriched_sections(
                 risk_reasons.append(f"touches likely application entrypoint ({path.split('/')[-1]})")
                 break
 
-        # High centrality check
+        # High centrality check — files with many inbound dependencies
         high_centrality = [
             f for f in impacted_files
             if f.get("inbound_dependencies", 0) >= 5
@@ -1048,6 +1405,19 @@ def _build_enriched_sections(
         if high_centrality:
             risk_reasons.append(
                 f"affects {len(high_centrality)} high-centrality file(s) with many dependents"
+            )
+
+        # Blast radius size signal
+        indirect_count = len([f for f in impacted_files if not f.get("is_directly_changed")])
+        if indirect_count >= 10:
+            risk_reasons.append(f"large blast radius: {indirect_count} indirectly impacted files")
+        elif indirect_count >= 5:
+            risk_reasons.append(f"moderate blast radius: {indirect_count} indirectly impacted files")
+
+        # Changed symbols signal
+        if changed_symbols:
+            risk_reasons.append(
+                f"modifies {len(changed_symbols)} symbol(s): {', '.join(changed_symbols[:3])}"
             )
 
         # Docs/test only → lower risk signal
@@ -1061,14 +1431,37 @@ def _build_enriched_sections(
         if all_cats_changed == {"docs_or_test"}:
             risk_reasons = ["only touches docs/tests/generated files — lower structural risk"]
 
-        # No graph data
-        if not edges:
-            risk_reasons.append("no dependency graph available — impact may be underestimated")
+        # Sparse graph confidence penalty — be honest when evidence is weak
+        if not edges and not used_inferred_edges:
+            risk_reasons.append(
+                "no dependency graph available — impact may be underestimated; "
+                "re-index to enable relationship-aware analysis"
+            )
+            # Reduce score when graph is missing — don't claim high confidence
+            adjusted_score = min(total_impact_score, 60.0)
+        elif used_inferred_edges:
+            risk_reasons.append(
+                "used inferred dependency relationships — confidence is lower than persisted edges"
+            )
+            adjusted_score = total_impact_score * 0.90  # slight confidence penalty for inferred
+        else:
+            # Confidence scales with graph density
+            n_files = len(file_map) if file_map else 1
+            n_edges = len(edges)
+            density = n_edges / max(n_files, 1)
+            if density < 0.5:
+                risk_reasons.append(
+                    f"sparse dependency graph ({n_edges} edges / {n_files} files) — "
+                    "confidence is partial"
+                )
+                adjusted_score = total_impact_score * 0.85  # slight confidence penalty
+            else:
+                adjusted_score = total_impact_score
 
         risk_assessment = {
             "overall_risk_level": risk_level,
-            "overall_risk_score": round(total_impact_score, 1),
-            "risk_reasons": risk_reasons[:6],
+            "overall_risk_score": round(adjusted_score, 1),
+            "risk_reasons": risk_reasons[:7],
         }
     except Exception as e:
         logger.debug(f"risk_assessment failed: {e}")
@@ -1264,8 +1657,10 @@ def _build_enriched_sections(
                 break
 
         # Graph evidence
-        if not edges:
+        if not edges and not used_inferred_edges:
             evidence.append({"signal": "no resolved dependency edges — graph expansion unavailable", "file_path": "", "detail": "re-index to enable relationship-aware analysis"})
+        elif used_inferred_edges:
+            evidence.append({"signal": "used inferred dependency relationships for impact expansion", "file_path": "", "detail": "confidence lower than persisted dependency edges"})
 
         # Deduplicate signals
         seen_sigs: set[str] = set()
@@ -1288,6 +1683,54 @@ def _build_enriched_sections(
     # (it's already computed upstream — we just expose it in the new field too)
     executive_summary = ""  # will be filled by caller from result["summary"]
 
+    # ── Section I: Impact Confidence + Evidence Breakdown ────────────────────
+    try:
+        # Count edge types used across all impacted files
+        all_etypes: list[str] = []
+        for f in impacted_files:
+            all_etypes.extend(f.get("edge_types", []))
+
+        _EXACT_TYPES = {"route_to_service", "service_to_model", "uses_symbol", "import", "from_import", "call", "require"}
+        _INFERRED_TYPES = {"inferred", "inferred_naming", "inferred_api"}
+        _FLOW_TYPES = {"route_to_service", "service_to_model"}
+        _SYMBOL_TYPES = {"uses_symbol", "call"}
+
+        exact_count = sum(1 for et in all_etypes if et in _EXACT_TYPES)
+        inferred_count = sum(1 for et in all_etypes if et in _INFERRED_TYPES)
+        flow_count = sum(1 for et in all_etypes if et in _FLOW_TYPES)
+        symbol_count = sum(1 for et in all_etypes if et in _SYMBOL_TYPES)
+        semantic_only = sum(1 for f in impacted_files if f.get("reason_tag") == "semantic_reference_only")
+
+        total_evidence = exact_count + inferred_count + flow_count + symbol_count
+        if total_evidence == 0:
+            impact_confidence = "low"
+        elif exact_count + flow_count + symbol_count >= total_evidence * 0.6:
+            impact_confidence = "high"
+        elif exact_count + flow_count + symbol_count >= total_evidence * 0.3:
+            impact_confidence = "medium"
+        else:
+            impact_confidence = "low"
+
+        # Downgrade if graph is sparse
+        if not edges:
+            impact_confidence = "low"
+        elif impact_confidence == "high" and semantic_only > len(impacted_files) * 0.5:
+            impact_confidence = "medium"
+
+        evidence_breakdown = {
+            "exact_edges_used": exact_count,
+            "inferred_edges_used": inferred_count,
+            "flow_links_used": flow_count,
+            "symbol_links_used": symbol_count,
+            "semantic_only_hits": semantic_only,
+            "total_impacted": len(impacted_files),
+        }
+    except Exception as e:
+        logger.debug(f"impact_confidence failed: {e}")
+        impact_confidence = "low"
+        evidence_breakdown = {}
+        partial_failures.append("impact_confidence")
+
     return {
         "input_extraction": input_extraction,
         "blast_radius": blast_radius,
@@ -1297,6 +1740,8 @@ def _build_enriched_sections(
         "possible_regressions": possible_regressions,
         "evidence": evidence,
         "executive_summary": executive_summary,
+        "impact_confidence": impact_confidence,
+        "evidence_breakdown": evidence_breakdown,
         "partial_failure": len(partial_failures) > 0,
         "partial_failure_reasons": partial_failures,
     }

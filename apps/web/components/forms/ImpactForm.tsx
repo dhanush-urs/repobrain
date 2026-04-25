@@ -72,8 +72,6 @@ const EXAMPLE_DIFF = `diff --git a/app/services/auth.py b/app/services/auth.py
 -def verify_token(token: str) -> dict:
 +def verify_token(token: str, strict: bool = False) -> dict:`;
 
-const SAMPLE_FILES = `app/services/auth.py\napp/api/routes/users.py`;
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -88,13 +86,63 @@ export function ImpactForm({ repoId }: Props) {
   const [showAllFiles, setShowAllFiles] = useState(false);
   const [showFlowPaths, setShowFlowPaths] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
+  // File path validation state
+  const [fileValidationWarning, setFileValidationWarning] = useState<string | null>(null);
   const reqSeq = useRef(0);
+
+  // Validate changed file paths look like real relative paths (not placeholder text)
+  function validateFilePaths(raw: string): { valid: string[]; suspicious: string[] } {
+    const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
+    const valid: string[] = [];
+    const suspicious: string[] = [];
+    for (const line of lines) {
+      // A valid relative file path: contains a dot (extension) or slash, no spaces, reasonable length
+      const looksLikePath = (
+        line.length > 0 &&
+        line.length < 300 &&
+        !line.includes(" ") &&
+        (line.includes("/") || line.includes(".")) &&
+        !line.startsWith("http") &&
+        !line.startsWith("#")
+      );
+      if (looksLikePath) {
+        valid.push(line);
+      } else {
+        suspicious.push(line);
+      }
+    }
+    return { valid, suspicious };
+  }
+
+  function onChangedFilesChange(value: string) {
+    setChangedFiles(value);
+    if (!value.trim()) {
+      setFileValidationWarning(null);
+      return;
+    }
+    const { valid, suspicious } = validateFilePaths(value);
+    if (suspicious.length > 0 && valid.length === 0) {
+      setFileValidationWarning(`These don't look like valid file paths. Use relative paths like: app/services/auth.py`);
+    } else if (suspicious.length > 0) {
+      setFileValidationWarning(`${suspicious.length} line(s) don't look like valid paths and will be skipped.`);
+    } else {
+      setFileValidationWarning(null);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!diff.trim() && !changedFiles.trim()) {
       setError("Provide a unified diff or at least one changed file path.");
       return;
+    }
+    // Validate file paths before submitting
+    if (changedFiles.trim() && !diff.trim()) {
+      const { valid } = validateFilePaths(changedFiles);
+      if (valid.length === 0) {
+        setError("No valid file paths found. Use relative paths like: app/services/auth.py");
+        return;
+      }
     }
     reqSeq.current += 1;
     const seq = reqSeq.current;
@@ -103,7 +151,7 @@ export function ImpactForm({ repoId }: Props) {
     setResult(null);
     setShowAllFiles(false);
     try {
-      const files = changedFiles.split("\n").map(f => f.trim()).filter(Boolean);
+      const { valid: files } = validateFilePaths(changedFiles);
       const response = await analyzeImpact(repoId, {
         diff: diff.trim() || undefined,
         changed_files: files.length ? files : undefined,
@@ -172,18 +220,20 @@ export function ImpactForm({ repoId }: Props) {
                 Changed Files{" "}
                 <span className="text-slate-600 normal-case font-normal">(one per line)</span>
               </label>
-              <button type="button" onClick={() => { setChangedFiles(SAMPLE_FILES); setDiff(""); }}
-                className="text-[10px] text-slate-600 hover:text-indigo-400 transition-colors">
-                Use files only
-              </button>
             </div>
             <textarea
               value={changedFiles}
-              onChange={e => setChangedFiles(e.target.value)}
+              onChange={e => onChangedFilesChange(e.target.value)}
               rows={2}
               className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 font-mono text-xs text-slate-200 placeholder:text-slate-700 outline-none focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/10 transition-colors resize-none"
-              placeholder={"app/services/auth.py\napp/api/routes/users.py"}
+              placeholder={"Relative file paths, one per line\ne.g. app/services/auth.py"}
             />
+            {fileValidationWarning && (
+              <div className="flex items-start gap-2 text-[11px] text-amber-400/80">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>{fileValidationWarning}</span>
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -270,6 +320,64 @@ export function ImpactForm({ repoId }: Props) {
               </span>
             </div>
             <p className="text-sm text-slate-200 leading-relaxed">{result.executive_summary || result.summary}</p>
+
+            {/* Impact confidence badge */}
+            {result.impact_confidence && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 uppercase tracking-widest">Evidence confidence:</span>
+                <span className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest",
+                  result.impact_confidence === "high"
+                    ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/10"
+                    : result.impact_confidence === "medium"
+                    ? "text-amber-400 border-amber-500/20 bg-amber-500/10"
+                    : "text-slate-400 border-slate-500/20 bg-slate-500/10"
+                )}>
+                  {result.impact_confidence}
+                </span>
+                {result.evidence_breakdown && (
+                  <span className="text-[10px] text-slate-600">
+                    {result.evidence_breakdown.exact_edges_used > 0 && `${result.evidence_breakdown.exact_edges_used} exact`}
+                    {result.evidence_breakdown.flow_links_used > 0 && ` · ${result.evidence_breakdown.flow_links_used} flow`}
+                    {result.evidence_breakdown.symbol_links_used > 0 && ` · ${result.evidence_breakdown.symbol_links_used} symbol`}
+                    {result.evidence_breakdown.inferred_edges_used > 0 && ` · ${result.evidence_breakdown.inferred_edges_used} inferred`}
+                    {result.evidence_breakdown.semantic_only_hits > 0 && ` · ${result.evidence_breakdown.semantic_only_hits} semantic-only`}
+                  </span>
+                )}
+              </div>
+            )}
+            {/* Sparse graph warning */}
+            {result.impact_confidence === "low" && !result.partial_failure && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg bg-slate-500/5 border border-slate-500/15 px-3 py-2">
+                <Info className="h-3.5 w-3.5 text-slate-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-slate-500">Impact analysis used partial graph evidence — confidence is reduced. Re-index to improve.</p>
+              </div>
+            )}
+            {/* Trivial change notice */}
+            {result.is_trivial_change && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg bg-slate-500/5 border border-slate-500/15 px-3 py-2">
+                <Info className="h-3.5 w-3.5 text-slate-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-slate-500">Low-signal change detected — score capped to avoid false severity.</p>
+              </div>
+            )}
+            {/* Score explanation */}
+            {result.score_explanation && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg bg-white/[0.02] border border-white/5 px-3 py-2">
+                <Eye className="h-3.5 w-3.5 text-slate-600 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-slate-500">{result.score_explanation}</p>
+              </div>
+            )}
+            {/* Change types */}
+            {result.change_types && result.change_types.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="text-[10px] text-slate-600 uppercase tracking-widest self-center">Changes:</span>
+                {result.change_types.slice(0, 4).map(ct => (
+                  <span key={ct} className="text-[10px] font-mono text-slate-500 bg-white/[0.02] border border-white/5 rounded px-1.5 py-0.5">
+                    {ct.replace(/_/g, " ")}
+                  </span>
+                ))}
+              </div>
+            )}
             {result.changed_symbols?.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <span className="text-[10px] text-slate-600 uppercase tracking-widest self-center">Symbols:</span>
@@ -345,13 +453,40 @@ export function ImpactForm({ repoId }: Props) {
                     const catStyle = CAT_COLOR[file.primary_category] || CAT_COLOR.module;
                     const catLabel = CAT_LABEL[file.primary_category] || file.primary_category;
                     const topReason = file.why_now || file.reasons[0] || "";
+                    const reasonTag = file.reason_tag;
+                    const evidenceStrength = file.evidence_strength;
+                    // Human-readable reason tag label
+                    const REASON_LABELS: Record<string, string> = {
+                      direct_change: "changed",
+                      imports_changed_code: "imports changed",
+                      changed_symbol_used_here: "uses changed symbol",
+                      route_calls_changed_service: "route → service",
+                      service_uses_changed_model: "service → model",
+                      same_execution_path: "execution path",
+                      frontend_calls_changed_route: "frontend → API",
+                      config_or_integration_dependency: "config/integration",
+                      semantic_reference_only: "semantic ref",
+                    };
+                    const reasonLabel = reasonTag ? (REASON_LABELS[reasonTag] || reasonTag) : null;
                     return (
                       <div key={file.file_id} className="flex items-center gap-2 rounded-lg border border-white/5 bg-slate-900/30 px-3 py-2 hover:bg-slate-900/50 transition-colors group">
                         <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", dot)} />
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                             <span className="text-xs font-mono text-slate-200 truncate">{file.path.split("/").pop()}</span>
                             <span className={cn("shrink-0 rounded-full border px-1.5 py-0 text-[9px] font-semibold uppercase tracking-widest", catStyle)}>{catLabel}</span>
+                            {reasonLabel && (
+                              <span className={cn(
+                                "shrink-0 rounded-full border px-1.5 py-0 text-[9px] font-medium",
+                                evidenceStrength === "high"
+                                  ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/5"
+                                  : evidenceStrength === "medium"
+                                  ? "text-amber-400 border-amber-500/20 bg-amber-500/5"
+                                  : "text-slate-500 border-slate-500/20 bg-slate-500/5"
+                              )}>
+                                {reasonLabel}
+                              </span>
+                            )}
                           </div>
                           {topReason && <p className="text-[10px] text-slate-600 mt-0.5 truncate">{topReason}</p>}
                         </div>

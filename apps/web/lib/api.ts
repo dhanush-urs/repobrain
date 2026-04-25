@@ -426,3 +426,43 @@ export async function getExecutionFlow(
   );
 }
 
+
+export type FileIntelligenceRecord = {
+  file_id: string;
+  path: string;
+  name: string;
+  language: string | null;
+  file_kind: string;
+  line_count: number;
+  role: string;
+  role_confidence: number;
+  importance_score: number;
+  inbound_edge_count: number;
+  outbound_edge_count: number;
+  semantic_edge_count: number;
+  symbol_count: number;
+  is_entrypoint: boolean;
+  is_frontend: boolean;
+  is_generated: boolean;
+  is_vendor: boolean;
+  is_test: boolean;
+};
+
+export type FileIntelligenceResponse = {
+  repository_id: string;
+  files: FileIntelligenceRecord[];
+  total: number;
+  error?: string;
+};
+
+export async function getFileIntelligence(
+  repoId: string,
+  limit = 200,
+): Promise<FileIntelligenceResponse> {
+  return safeFetch(
+    `/repos/${repoId}/intelligence?limit=${limit}`,
+    { cache: "no-store" },
+    { repository_id: repoId, files: [], total: 0 },
+    15000,
+  );
+}

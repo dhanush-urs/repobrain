@@ -38,6 +38,14 @@ const NODE_TYPE_COLORS: Record<string, string> = {
   external_client: "#ec4899",  // pink
   config:          "#64748b",  // slate
   module:          "#6366f1",  // indigo fallback
+  // Frontend node types
+  frontend:        "#f59e0b",  // amber
+  frontend_view:   "#f59e0b",  // amber
+  frontend_component: "#f59e0b",
+  frontend_api_client: "#f97316",
+  // Data / config
+  data:            "#10b981",  // emerald
+  integration:     "#ec4899",  // pink
 };
 
 const NODE_TYPE_LABELS: Record<string, string> = {
@@ -51,6 +59,12 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   external_client: "External",
   config:          "Config",
   module:          "Module",
+  frontend:        "Frontend",
+  frontend_view:   "Frontend",
+  frontend_component: "Component",
+  frontend_api_client: "API Client",
+  data:            "Data",
+  integration:     "Integration",
 };
 
 const MODE_CONFIG: Record<FlowMode, { label: string; placeholder: string; inputLabel: string }> = {
@@ -62,26 +76,53 @@ const MODE_CONFIG: Record<FlowMode, { label: string; placeholder: string; inputL
 };
 
 // ---------------------------------------------------------------------------
-// Layered left-to-right layout (improved from grid)
+// Layered left-to-right layout — semantic role-aware
 // ---------------------------------------------------------------------------
+
+// Semantic layer order: lower index = further left (upstream)
+const _ROLE_LAYER: Record<string, number> = {
+  // Frontend / entry (leftmost)
+  frontend_view: 0, frontend_component: 0, frontend_api_client: 0, frontend: 0,
+  // Entrypoint
+  entrypoint: 1,
+  // Route / middleware
+  route_handler: 2, middleware: 2,
+  // Service / business logic
+  service: 3,
+  // Data / persistence
+  repository: 4, model: 4, data: 4,
+  // Config / integration / external (rightmost)
+  config: 5, integration: 5, external_client: 5,
+  worker: 5, utility: 6,
+  module: 3,  // fallback: middle
+};
+
+function _roleLayer(nodeType: string): number {
+  return _ROLE_LAYER[nodeType] ?? 3;
+}
 
 function layoutNodesLayered(nodes: FlowNode[], W: number, H: number): LayoutNode[] {
   if (!nodes.length) return [];
-  
-  // Assign nodes to layers based on their position in the path
-  // Layer 0 = leftmost (entry), Layer N = rightmost (leaf)
-  const layers: FlowNode[][] = [];
-  const layerW = W / (nodes.length + 1);
-  
-  // Simple layering: each node gets its own column
-  nodes.forEach((n, i) => {
-    if (!layers[i]) layers[i] = [];
-    layers[i].push(n);
-  });
 
-  // Position nodes
+  // Assign each node to a semantic layer based on its type/role
+  const layerMap = new Map<number, FlowNode[]>();
+  for (const n of nodes) {
+    const layer = _roleLayer(n.type);
+    if (!layerMap.has(layer)) layerMap.set(layer, []);
+    layerMap.get(layer)!.push(n);
+  }
+
+  // If all nodes ended up in the same layer (no role diversity), fall back to sequential
+  const usedLayers = Array.from(layerMap.keys()).sort((a, b) => a - b);
+  const effectiveLayers: FlowNode[][] = usedLayers.length > 1
+    ? usedLayers.map(l => layerMap.get(l)!)
+    : nodes.map(n => [n]);  // sequential fallback
+
+  const numLayers = effectiveLayers.length;
+  const layerW = W / (numLayers + 1);
+
   const result: LayoutNode[] = [];
-  layers.forEach((layer, layerIdx) => {
+  effectiveLayers.forEach((layer, layerIdx) => {
     const x = layerW * (layerIdx + 1);
     const layerH = H / (layer.length + 1);
     layer.forEach((n, nodeIdx) => {
@@ -192,23 +233,23 @@ export function FlowCanvas({ repoId, initialMode, initialQuery, initialChanged }
     <div className="flex flex-col gap-5">
       {/* Mode selector + input */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {/* Primary tab — always first */}
           <button
             onClick={() => { setMode("primary"); setQueryInput(""); setFlowData(null); setError(null); setSelectedNode(null); runFlow("primary", ""); }}
             className={cn(
-              "flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-medium transition-all border",
+              "flex items-center gap-2 h-8 px-3 rounded-md text-[11px] font-semibold transition-all border",
               mode === "primary"
-                ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
-                : "border-white/5 text-slate-400 hover:text-white hover:bg-white/5"
+                ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
+                : "border-white/5 text-slate-500 hover:text-slate-300 hover:bg-white/5"
             )}
           >
-            <Workflow className="h-3.5 w-3.5" />
+            <Workflow size={14} />
             Primary Flow
           </button>
 
           {/* Divider */}
-          <span className="text-slate-700 text-xs">|</span>
+          <span className="text-slate-800 text-xs">|</span>
 
           {/* Advanced manual modes */}
           {(["route", "file", "function", "impact"] as FlowMode[]).map(m => {
@@ -218,16 +259,16 @@ export function FlowCanvas({ repoId, initialMode, initialQuery, initialChanged }
                 key={m}
                 onClick={() => { setMode(m); setQueryInput(""); setFlowData(null); setError(null); setSelectedNode(null); }}
                 className={cn(
-                  "flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-medium transition-all border",
+                  "flex items-center gap-2 h-8 px-3 rounded-md text-[11px] font-semibold transition-all border",
                   mode === m
-                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
-                    : "border-white/5 text-slate-400 hover:text-white hover:bg-white/5"
+                    ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
+                    : "border-white/5 text-slate-500 hover:text-slate-300 hover:bg-white/5"
                 )}
               >
-                {m === "route" && <ArrowRight className="h-3.5 w-3.5" />}
-                {m === "file" && <FileCode className="h-3.5 w-3.5" />}
-                {m === "function" && <Search className="h-3.5 w-3.5" />}
-                {m === "impact" && <Zap className="h-3.5 w-3.5" />}
+                {m === "route" && <ArrowRight size={14} />}
+                {m === "file" && <FileCode size={14} />}
+                {m === "function" && <Search size={14} />}
+                {m === "impact" && <Zap size={14} />}
                 {cfg.label}
               </button>
             );
@@ -236,31 +277,29 @@ export function FlowCanvas({ repoId, initialMode, initialQuery, initialChanged }
 
         {/* Input row — hidden for primary mode (no input needed) */}
         {mode !== "primary" && (
-          <form onSubmit={onSubmit} className="flex items-center gap-3">
-            <div className="flex-1 relative">
-              <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1 block">
+          <form onSubmit={onSubmit} className="flex items-end gap-3 max-w-2xl">
+            <div className="flex-1 space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600 block px-1">
                 {MODE_CONFIG[mode].inputLabel}
               </label>
               <input
                 value={queryInput}
                 onChange={e => setQueryInput(e.target.value)}
                 placeholder={MODE_CONFIG[mode].placeholder}
-                className="w-full h-9 px-3 rounded-lg bg-slate-900 border border-white/10 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-indigo-500/50 transition-colors font-mono"
+                className="w-full h-9 px-3 rounded-md bg-slate-900 border border-white/10 text-[13px] text-slate-200 placeholder:text-slate-700 outline-none focus:border-indigo-500/40 transition-colors font-mono shadow-inner"
               />
             </div>
-            <div className="pt-5">
-              <Button
-                type="submit"
-                variant="indigo"
-                size="sm"
-                disabled={loading || !queryInput.trim()}
-                isLoading={loading}
-                className="h-9 px-5"
-              >
-                <Workflow className="mr-2 h-3.5 w-3.5" />
-                Trace
-              </Button>
-            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={loading || !queryInput.trim()}
+              isLoading={loading}
+              className="h-9 px-6"
+            >
+              <Workflow size={14} className="mr-2" />
+              Trace
+            </Button>
           </form>
         )}
 
@@ -443,20 +482,46 @@ export function FlowCanvas({ repoId, initialMode, initialQuery, initialChanged }
                         const y1 = s.y + (dy / len) * nr;
                         const x2 = t.x - (dx / len) * (nr + 4);
                         const y2 = t.y - (dy / len) * (nr + 4);
+                        // Semantic edge label
+                        const _EDGE_LABELS: Record<string, string> = {
+                          route_to_service: "calls service",
+                          service_to_model: "uses model",
+                          uses_symbol: "uses symbol",
+                          inferred_api: "calls API",
+                          html_loads_script: "loads script",
+                          html_loads_style: "loads style",
+                          service_reads_data: "reads data",
+                          service_reads_config: "reads config",
+                          route_reads_data: "reads data",
+                          route_reads_config: "reads config",
+                          service_returns_to_route: "returns data",
+                          route_responds_to_frontend: "responds",
+                          calls: "calls",
+                          depends_on: "depends on",
+                          impacts: "impacts",
+                          import: "imports",
+                          from_import: "imports",
+                        };
+                        const edgeLabel = _EDGE_LABELS[edge.type] || edge.type;
+                        const isSemanticEdge = ["route_to_service", "service_to_model", "uses_symbol", "inferred_api", "html_loads_script", "html_loads_style", "service_reads_data", "service_reads_config", "route_reads_data", "route_reads_config"].includes(edge.type);
+                        const isResponseEdge = ["service_returns_to_route", "route_responds_to_frontend"].includes(edge.type);
                         return (
                           <g key={i}>
                             <line
                               x1={x1} y1={y1} x2={x2} y2={y2}
-                              stroke="#6366f1" strokeWidth={1.5} strokeOpacity={0.5}
+                              stroke={isResponseEdge ? "#06b6d4" : isSemanticEdge ? "#8b5cf6" : "#6366f1"}
+                              strokeWidth={isSemanticEdge || isResponseEdge ? 2 : 1.5}
+                              strokeOpacity={isResponseEdge ? 0.6 : isSemanticEdge ? 0.7 : 0.5}
+                              strokeDasharray={isResponseEdge ? "5 3" : undefined}
                               markerEnd="url(#flow-arrow)"
                             />
                             <text
                               x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 8}
                               textAnchor="middle" fontSize={8}
-                              fill="rgba(148,163,184,0.5)"
+                              fill={isSemanticEdge ? "rgba(139,92,246,0.7)" : "rgba(148,163,184,0.5)"}
                               style={{ pointerEvents: "none" }}
                             >
-                              {edge.type}
+                              {edgeLabel}
                             </text>
                           </g>
                         );
@@ -478,22 +543,19 @@ export function FlowCanvas({ repoId, initialMode, initialQuery, initialChanged }
                             style={{ cursor: "pointer" }}
                             onClick={e => { e.stopPropagation(); setSelectedNode(isSel ? null : node); }}
                           >
-                            {/* Shadow */}
-                            <rect x={2} y={2} width={NW} height={NH} rx={8}
-                              fill="rgba(0,0,0,0.3)" />
-                            {/* Selected glow */}
+                            {/* Selected highlight */}
                             {isSel && (
-                              <rect x={-3} y={-3} width={NW + 6} height={NH + 6} rx={10}
+                              <rect x={-3} y={-3} width={NW + 6} height={NH + 6} rx={8}
                                 fill="none" stroke={color} strokeWidth={1} strokeOpacity={0.3} />
                             )}
                             {/* Body */}
-                            <rect width={NW} height={NH} rx={8}
-                              fill={color + (isSel ? "40" : "18")}
-                              stroke={isSel ? color : color + "44"}
-                              strokeWidth={isSel ? 2.5 : 1}
+                            <rect width={NW} height={NH} rx={6}
+                              fill={isSel ? color + "20" : "rgba(15,23,42,0.8)"}
+                              stroke={isSel ? color : color + "33"}
+                              strokeWidth={isSel ? 2 : 1}
                             />
                             {/* Top accent bar */}
-                            <rect width={NW} height={4} rx={8} fill={color} fillOpacity={0.7} />
+                            <rect width={NW} height={3} rx={6} fill={color} fillOpacity={0.7} />
                             {/* Type badge */}
                             <text x={NW / 2} y={18} textAnchor="middle" fontSize={7}
                               fill={color} fontWeight="bold"
@@ -502,25 +564,25 @@ export function FlowCanvas({ repoId, initialMode, initialQuery, initialChanged }
                             </text>
                             {/* Label */}
                             <text x={NW / 2} y={33} textAnchor="middle" fontSize={9}
-                              fill="rgba(255,255,255,0.9)" fontWeight="600"
+                              fill={isSel ? "white" : "rgba(255,255,255,0.85)"} fontWeight="600"
                               style={{ pointerEvents: "none" }}>
                               {node.label.length > 14 ? node.label.slice(0, 12) + "…" : node.label}
                             </text>
                             {/* Symbol */}
                             {node.symbol && (
                               <text x={NW / 2} y={45} textAnchor="middle" fontSize={7}
-                                fill="rgba(148,163,184,0.6)"
+                                fill="rgba(148,163,184,0.5)"
                                 style={{ pointerEvents: "none" }}>
                                 {node.symbol.length > 16 ? node.symbol.slice(0, 14) + "…" : node.symbol}
                               </text>
                             )}
-                            {/* Changed/impacted ring */}
+                            {/* Changed/impacted indicator */}
                             {(node.changed || node.impacted) && (
-                              <rect x={-2} y={-2} width={NW + 4} height={NH + 4} rx={10}
+                              <rect x={-2} y={-2} width={NW + 4} height={NH + 4} rx={8}
                                 fill="none"
                                 stroke={node.changed ? "#ef4444" : "#f97316"}
                                 strokeWidth={1.5} strokeOpacity={0.6}
-                                strokeDasharray="4 2"
+                                strokeDasharray="3 2"
                               />
                             )}
                           </g>
@@ -589,42 +651,42 @@ function NodeDetailPanel({ node, repoId, onClose }: { node: LayoutNode; repoId: 
   const color = node.changed ? "#ef4444" : node.impacted ? "#f97316" : (NODE_TYPE_COLORS[node.type] || "#6366f1");
 
   return (
-    <div className="rounded-xl border border-white/5 bg-slate-900/60 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+    <div className="rounded-lg border border-border/40 bg-slate-900/60 overflow-hidden shadow-premium">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5 bg-white/[0.02]">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="h-2.5 w-2.5 rounded shrink-0" style={{ backgroundColor: color }} />
-          <span className="text-xs font-semibold text-white truncate">{node.label}</span>
+          <div className="h-2 w-2 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+          <span className="text-[11px] font-bold text-slate-200 truncate">{node.label}</span>
         </div>
-        <button onClick={onClose} className="text-slate-500 hover:text-white ml-2 shrink-0">
-          <X className="h-3.5 w-3.5" />
+        <button onClick={onClose} className="text-slate-600 hover:text-slate-400 ml-2 shrink-0 transition-colors">
+          <X size={14} />
         </button>
       </div>
-      <div className="p-4 space-y-3">
+      <div className="p-3.5 space-y-3.5">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1">Path</div>
-          <div className="text-xs text-slate-300 font-mono break-all">{node.path}</div>
+          <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Path</div>
+          <div className="text-[11px] text-slate-400 font-mono break-all leading-relaxed opacity-80">{node.path}</div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-0.5">Type</div>
-            <div className="text-xs font-medium" style={{ color }}>{NODE_TYPE_LABELS[node.type] || node.type}</div>
+            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Type</div>
+            <div className="text-[11px] font-bold" style={{ color }}>{NODE_TYPE_LABELS[node.type] || node.type}</div>
           </div>
           {node.symbol && (
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-0.5">Symbol</div>
-              <div className="text-xs text-slate-300 font-mono">{node.symbol}</div>
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Symbol</div>
+              <div className="text-[11px] text-slate-300 font-mono">{node.symbol}</div>
             </div>
           )}
           {node.language && (
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-0.5">Language</div>
-              <div className="text-xs text-slate-300">{node.language}</div>
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Language</div>
+              <div className="text-[11px] text-slate-300">{node.language}</div>
             </div>
           )}
           {node.line_count > 0 && (
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-0.5">Lines</div>
-              <div className="text-xs text-slate-300">{node.line_count}</div>
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Lines</div>
+              <div className="text-[11px] text-slate-300 font-medium">{node.line_count}</div>
             </div>
           )}
         </div>
@@ -672,36 +734,93 @@ function NodeDetailPanel({ node, repoId, onClose }: { node: LayoutNode; repoId: 
 }
 
 function PathSummaryPanel({ path, repoId }: { path: FlowPath; repoId: string }) {
+  // Compute flow confidence from edge types
+  const _SEMANTIC_EDGE_TYPES = new Set(["route_to_service", "service_to_model", "uses_symbol", "inferred_api", "html_loads_script", "html_loads_style", "service_reads_data", "service_reads_config", "route_reads_data", "route_reads_config"]);
+  const _EXACT_EDGE_TYPES = new Set(["route_to_service", "service_to_model", "uses_symbol"]);
+  const _RESPONSE_EDGE_TYPES = new Set(["service_returns_to_route", "route_responds_to_frontend"]);
+  const _DATA_EDGE_TYPES = new Set(["service_reads_data", "service_reads_config", "route_reads_data", "route_reads_config"]);
+
+  const semanticEdges = path.edges.filter(e => _SEMANTIC_EDGE_TYPES.has(e.type)).length;
+  const exactEdges = path.edges.filter(e => _EXACT_EDGE_TYPES.has(e.type)).length;
+  const responseEdges = path.edges.filter(e => _RESPONSE_EDGE_TYPES.has(e.type)).length;
+  const dataEdges = path.edges.filter(e => _DATA_EDGE_TYPES.has(e.type)).length;
+  const totalEdges = path.edges.length;
+  const flowConfidence = totalEdges === 0 ? "low"
+    : exactEdges >= totalEdges * 0.5 ? "high"
+    : semanticEdges >= totalEdges * 0.3 ? "medium"
+    : "low";
+
+  // Classify nodes into request vs response path
+  const requestNodeTypes = new Set(["frontend_view", "frontend_component", "frontend_api_client", "entrypoint", "route_handler", "middleware"]);
+  const processingNodeTypes = new Set(["service", "repository", "model"]);
+  const dataNodeTypes = new Set(["config", "integration", "external_client"]);
+
+  const requestNodes = path.nodes.filter(n => requestNodeTypes.has(n.type));
+  const processingNodes = path.nodes.filter(n => processingNodeTypes.has(n.type));
+  const dataNodes = path.nodes.filter(n => dataNodeTypes.has(n.type));
+  const hasResponsePath = responseEdges > 0;
+
   return (
-    <div className="rounded-xl border border-white/5 bg-slate-900/40 p-4 space-y-4">
+    <div className="rounded-lg border border-border/40 bg-slate-900/40 p-4 space-y-3 shadow-premium">
       <div>
-        <div className="text-xs font-semibold text-white mb-2">Path Summary</div>
-        <p className="text-xs text-slate-400 leading-relaxed">{path.explanation}</p>
+        <div className="text-[11px] font-bold text-slate-200 uppercase tracking-wider mb-1.5">Path Summary</div>
+        <p className="text-[11px] text-slate-500 leading-relaxed italic">"{path.explanation}"</p>
       </div>
-      <div className="space-y-1.5">
+
+      {/* Runtime path breakdown */}
+      <div className="space-y-1.5 border-t border-white/5 pt-2.5">
+        {requestNodes.length > 0 && (
+          <div className="flex items-start gap-2 text-[11px]">
+            <span className="text-slate-600 shrink-0 w-16">Request</span>
+            <span className="text-slate-400 font-mono truncate">{requestNodes.map(n => n.label).join(" → ")}</span>
+          </div>
+        )}
+        {processingNodes.length > 0 && (
+          <div className="flex items-start gap-2 text-[11px]">
+            <span className="text-slate-600 shrink-0 w-16">Processing</span>
+            <span className="text-slate-400 font-mono truncate">{processingNodes.map(n => n.label).join(" → ")}</span>
+          </div>
+        )}
+        {dataNodes.length > 0 && (
+          <div className="flex items-start gap-2 text-[11px]">
+            <span className="text-slate-600 shrink-0 w-16">Data</span>
+            <span className="text-slate-400 font-mono truncate">{dataNodes.map(n => n.label).join(", ")}</span>
+          </div>
+        )}
+        {dataEdges > 0 && (
+          <div className="flex items-start gap-2 text-[11px]">
+            <span className="text-slate-600 shrink-0 w-16">Config</span>
+            <span className="text-slate-500">{dataEdges} data/config access{dataEdges !== 1 ? "es" : ""}</span>
+          </div>
+        )}
+        <div className="flex items-start gap-2 text-[11px]">
+          <span className="text-slate-600 shrink-0 w-16">Response</span>
+          <span className={hasResponsePath ? "text-cyan-400" : "text-slate-700"}>
+            {hasResponsePath ? `${responseEdges} return edge${responseEdges !== 1 ? "s" : ""} detected` : "No explicit response path inferred"}
+          </span>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="space-y-1 border-t border-white/5 pt-2.5">
         <div className="flex justify-between text-xs">
           <span className="text-slate-500">Nodes</span>
           <span className="text-slate-300">{path.nodes.length}</span>
         </div>
         <div className="flex justify-between text-xs">
-          <span className="text-slate-500">Edges</span>
-          <span className="text-slate-300">{path.edges.length}</span>
+          <span className="text-slate-500">Score</span>
+          <span className="text-slate-300">{Math.round(path.score * 100)}%</span>
         </div>
         <div className="flex justify-between text-xs">
           <span className="text-slate-500">Confidence</span>
-          <span className="text-slate-300">{Math.round(path.score * 100)}%</span>
+          <span className={flowConfidence === "high" ? "text-emerald-400" : flowConfidence === "medium" ? "text-amber-400" : "text-slate-500"}>
+            {flowConfidence === "high" ? "High" : flowConfidence === "medium" ? "Medium" : "Low"}
+            {exactEdges > 0 && ` · ${exactEdges} exact`}
+          </span>
         </div>
       </div>
-      <div className="space-y-1">
-        {path.nodes.slice(0, 5).map((n, i) => (
-          <div key={n.id} className="flex items-center gap-2 text-xs">
-            <span className="text-slate-600 tabular-nums w-4">{i + 1}.</span>
-            <div className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: NODE_TYPE_COLORS[n.type] || "#6366f1" }} />
-            <span className="text-slate-400 truncate font-mono">{n.label}</span>
-          </div>
-        ))}
-      </div>
-      <div className="pt-2 border-t border-white/5 text-[11px] text-slate-600 space-y-1">
+
+      <div className="pt-1 border-t border-white/5 text-[11px] text-slate-600 space-y-0.5">
         <div>Click a node to inspect it</div>
         <div>Scroll to zoom · Drag to pan</div>
       </div>
